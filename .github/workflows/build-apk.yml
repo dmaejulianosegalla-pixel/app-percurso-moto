@@ -35,19 +35,17 @@ jobs:
           npx cap init "Percurso Moto" "com.percurso.moto" --web-dir=www
           npx cap add android
 
-      - name: Inserir Icones Personalizados no Android
+      - name: Gerar e Inserir Icones Oficiais do Capacitor
         run: |
-          # Substitui os icones padrao do Capacitor pelos arquivos PNG personalizados do repositorio
+          # Instala a ferramenta oficial de assets para gerar os icones adaptativos do Android
+          npm install @capacitor-assets/cli --save-dev
+          
+          # Gera os icones automaticamente a partir do icon-512.png presente na raiz
           if [ -f icon-512.png ]; then
-            mkdir -p android/app/src/main/res/mipmap-xxhdpi/
-            cp icon-512.png android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png
-            cp icon-512.png android/app/src/main/res/mipmap-xxhdpi/ic_launcher_round.png
-            cp icon-512.png android/app/src/main/res/mipmap-xxhdpi/ic_launcher_foreground.png
+            npx @capacitor-assets/cli generate --android --iconBackgroundColor "#ffffff" --iconBackgroundColorDark "#ffffff"
           elif [ -f icon-192.png ]; then
-            mkdir -p android/app/src/main/res/mipmap-xxhdpi/
-            cp icon-192.png android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png
-            cp icon-192.png android/app/src/main/res/mipmap-xxhdpi/ic_launcher_round.png
-            cp icon-192.png android/app/src/main/res/mipmap-xxhdpi/ic_launcher_foreground.png
+            cp icon-192.png icon-512.png
+            npx @capacitor-assets/cli generate --android --iconBackgroundColor "#ffffff" --iconBackgroundColorDark "#ffffff"
           fi
 
       - name: Ajustar Permissoes, SDK 35 e Conflitos do Kotlin
