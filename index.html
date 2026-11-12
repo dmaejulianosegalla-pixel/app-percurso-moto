@@ -6,7 +6,6 @@
     <meta name="theme-color" content="#007bff">
     <title>Percurso Moto GPS</title>
     
-    <!-- Conexão com o Manifesto PWA para gerar o APK -->
     <link rel="manifest" href="manifest.json">
     <link rel="icon" type="image/png" href="icon-192.png">
     <link rel="apple-touch-icon" href="icon-192.png">
@@ -16,7 +15,6 @@
         body { margin: 0; padding: 0; font-family: Arial, sans-serif; overflow: hidden; }
         #map { height: 100vh; width: 100vw; position: absolute; top: 0; left: 0; z-index: 1; background-color: #e5e3df; }
         
-        /* Botão de Menu Compacto */
         #btn-toggle-panel {
             position: absolute;
             top: 12px;
@@ -110,8 +108,9 @@
         .btn-gravar:hover { background-color: #e0a800; }
         .btn-parar { background-color: #dc3545; margin-top: 5px; color: white; }
         .btn-parar:hover { background-color: #c82333; }
+        .btn-historico { background-color: #6c75d7; margin-top: 10px; }
+        .btn-historico:hover { background-color: #5a62c4; }
 
-        /* Painel de Bordo Inferior */
         #info-panel {
             position: absolute;
             bottom: 20px;
@@ -148,8 +147,7 @@
             font-weight: bold;
         }
 
-        /* Janela Modal de Resumo */
-        #modal-resumo {
+        #modal-resumo, #modal-historico {
             display: none;
             position: fixed;
             top: 0; left: 0; width: 100vw; height: 100vh;
@@ -160,15 +158,28 @@
         }
         .modal-content {
             background: white;
-            padding: 25px;
+            padding: 20px;
             border-radius: 12px;
-            width: 300px;
+            width: 320px;
+            max-height: 80vh;
+            overflow-y: auto;
             text-align: center;
             box-shadow: 0 4px 20px rgba(0,0,0,0.3);
         }
-        .modal-content h3 { margin-top: 0; color: #28a745; font-size: 20px; }
-        .modal-content p { font-size: 15px; color: #333; margin: 12px 0; }
-        .modal-content button { background-color: #007bff; margin-top: 15px; padding: 12px; font-size: 14px; }
+        .modal-content h3 { margin-top: 0; color: #28a745; font-size: 18px; }
+        .modal-content p { font-size: 14px; color: #333; margin: 10px 0; }
+        .modal-content button { background-color: #007bff; margin-top: 15px; padding: 10px; font-size: 13px; }
+        
+        .history-item {
+            background: #f8f9fa;
+            border: 1px solid #ddd;
+            padding: 10px;
+            border-radius: 6px;
+            margin-bottom: 8px;
+            text-align: left;
+            font-size: 12px;
+        }
+        .history-item span { font-weight: bold; color: #007bff; }
     </style>
 </head>
 <body>
@@ -201,6 +212,7 @@
         <h3 style="margin-top: 0; font-size: 14px; color: #333;">Gravador de Percurso (Moto)</h3>
         <button id="btn-iniciar" class="btn-gravar" onclick="iniciarGravacao()">Iniciar Gravacao GPS</button>
         <button id="btn-parar" class="btn-parar" onclick="pararGravacao()" style="display:none;">Parar e Salvar Trajeto</button>
+        <button class="btn-historico" onclick="abrirHistorico()">Ver Historico de Percursos</button>
     </div>
 
     <div id="info-panel">
@@ -222,12 +234,25 @@
         </div>
     </div>
 
+    <!-- Modal Conclusao -->
     <div id="modal-resumo">
         <div class="modal-content">
             <h3>Percurso Concluido!</h3>
-            <p><strong>Distancia Percorrida:</strong> <br><span id="modal-distancia" style="font-size: 20px; color: #007bff; font-weight: bold;">0.0 km</span></p>
-            <p><strong>Tempo Total:</strong> <br><span id="modal-tempo" style="font-size: 20px; color: #333; font-weight: bold;">0 min</span></p>
+            <p><strong>Distancia Percorrida:</strong> <br><span id="modal-distancia" style="font-size: 18px; color: #007bff; font-weight: bold;">0.0 km</span></p>
+            <p><strong>Tempo Total:</strong> <br><span id="modal-tempo" style="font-size: 18px; color: #333; font-weight: bold;">0 min</span></p>
             <button onclick="fecharModal()">OK / Fechar</button>
+        </div>
+    </div>
+
+    <!-- Modal Historico -->
+    <div id="modal-historico">
+        <div class="modal-content" style="width: 340px;">
+            <h3 style="color: #007bff;">Historico de Percursos</h3>
+            <div id="lista-historico" style="max-height: 250px; overflow-y: auto; margin-top: 10px;">
+                <!-- Itens injetados via JS -->
+            </div>
+            <button style="background-color: #dc3545;" onclick="limparHistorico()">Limpar Historico</button>
+            <button onclick="fecharHistorico()">Fechar</button>
         </div>
     </div>
 
@@ -492,6 +517,16 @@
             if (diffMinutos < 1) diffMinutos = 1;
 
             var distanciaKmFinal = (distanciaTotalMeters / 1000).toFixed(2);
+            var dataAtual = new Date().toLocaleDateString('pt-BR') + ' ' + new Date().toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit'});
+
+            // Salvar no localStorage
+            var historico = JSON.parse(localStorage.getItem('percursos_moto') || '[]');
+            historico.unshift({
+                data: dataAtual,
+                distancia: distanciaKmFinal + " km",
+                tempo: diffMinutos + " min"
+            });
+            localStorage.setItem('percursos_moto', JSON.stringify(historico));
 
             document.getElementById('modal-distancia').innerText = distanciaKmFinal + " km";
             document.getElementById('modal-tempo').innerText = diffMinutos + " minuto(s)";
@@ -505,6 +540,37 @@
 
         function fecharModal() {
             document.getElementById('modal-resumo').style.display = 'none';
+        }
+
+        function abrirHistorico() {
+            alternarPainel();
+            var historico = JSON.parse(localStorage.getItem('percursos_moto') || '[]');
+            var container = document.getElementById('lista-historico');
+            container.innerHTML = "";
+
+            if (historico.length === 0) {
+                container.innerHTML = "<p style='color: #666; text-align:center;'>Nenhum percurso salvo ainda.</p>";
+            } else {
+                historico.forEach(function(item, index) {
+                    var div = document.createElement('div');
+                    div.className = 'history-item';
+                    div.innerHTML = `<span>#${index+1} - ${item.data}</span><br>` +
+                                    `Distancia: <b>${item.distancia}</b> | Tempo: <b>${item.tempo}</b>`;
+                    container.appendChild(div);
+                });
+            }
+            document.getElementById('modal-historico').style.display = 'flex';
+        }
+
+        function fecharHistorico() {
+            document.getElementById('modal-historico').style.display = 'none';
+        }
+
+        function limparHistorico() {
+            if (confirm("Deseja realmente apagar todo o historico?")) {
+                localStorage.removeItem('percursos_moto');
+                abrirHistorico();
+            }
         }
     </script>
 </body>
