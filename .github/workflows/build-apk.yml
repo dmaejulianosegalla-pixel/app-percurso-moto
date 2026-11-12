@@ -35,13 +35,13 @@ jobs:
           npx cap init "Percurso Moto" "com.percurso.moto" --web-dir=www
           npx cap add android
 
-      - name: Configurar permissoes e Build.gradle para SDK 35
+      - name: Configurar permissoes e Build.gradle para SDK 35 e minSdk 23
         run: |
           # Adicionar permissoes de GPS no AndroidManifest
           sed -i 's/<uses-permission android:name="android.permission.INTERNET" \/>/<uses-permission android:name="android.permission.INTERNET" \/>\n    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" \/>\n    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" \/>/' android/app/src/main/AndroidManifest.xml
           
-          # Forcar compileSdk e targetSdk para 35 conforme exigido pelas dependencias atuais
-          echo "android { compileSdk 35; defaultConfig { targetSdk 35; minSdk 22; } }" >> android/app/build.gradle
+          # Forcar compileSdk 35, targetSdk 35 e minSdk 23 exigidos pelas dependencias
+          echo "android { compileSdk 35; defaultConfig { targetSdk 35; minSdk 23; } }" >> android/app/build.gradle
 
       - name: Compilar o APK (Debug Assinado)
         run: |
