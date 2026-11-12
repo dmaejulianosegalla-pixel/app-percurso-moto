@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>App de Percurso - Moto</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        body { margin: 0; padding: 0; font-family: Arial, sans-serif; overflow: hidden; }
+        #map { height: 100vh; width: 100vw; position: absolute; top: 0; left: 0; z-index: 1; background-color: #e5e3df; }
+        
+        /* Botão de Menu com largura ajustada exatamente à palavra */
+        #btn-toggle-panel {
+            position: absolute;
+            top: 12px;
+            left: 12px;
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 6px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+            z-index: 2000;
+            font-weight: bold;
+            font-size: 13px;
+            cursor: pointer;
+            width: auto; /* Ajusta o tamanho automático para a palavra Menu */
+        }
+
+        #control-panel {
+            position: absolute;
+            top: 55px;
+            left: 12px;
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+            z-index: 1000;
+            width: 280px;
+            max-height: 75vh;
+            overflow-y: auto;
+            display: none;
+        }
+        .input-group {
+            margin-bottom: 12px;
+            position: relative;
+        }
+        .input-group label {
+            display: block;
+            font-size: 12px;
+            font-weight: bold;
+            margin-bottom: 3px;
+            color: #333;
+        }
+        .input-group input {
+            width: 100%;
+            padding: 8px;
+            box-sizing: border-box;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-size: 13px;
+        }
+        .suggestions-list {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background: white;
+            border: 1px solid #ccc;
+            border-top: none;
+            max-height: 150px;
+            overflow-y: auto;
+            z-index: 3000;
+            border-radius: 0 0 4px 4px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        .suggestion-item {
+            padding: 8px 10px;
+            font-size: 12px;
+            cursor: pointer;
+            border-bottom: 1px solid #eee;
+            color: #333;
+            background-color: #fff;
+        }
+        .suggestion-item:hover { background-color: #f1f1f1; }
+        
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 9px;
+            border-radius: 4px;
+            cursor: pointer;
+            width: 100%;
+            font-weight: bold;
+            font-size: 13px;
+            margin-top: 5px;
+        }
+        button:hover { background-color: #0056b3; }
+        .btn-gps { background-color: #28a745; margin-bottom: 10px; }
+        .btn-gps:hover { background-color: #218838; }
+        .btn-gravar { background-color: #ffc107; color: #333; margin-top: 15px; }
+        .btn-gravar:hover { background-color: #e0a800; }
+        .btn-parar { background-color: #dc3545; margin-top: 5px; color: white; }
+        .btn-parar:hover { background-color: #c82333; }
+
+        /* Painel de Bordo Inferior (Com 4 colunas: Status, Distância, Tempo e Velocidade) */
+        #info-panel {
+            position: absolute;
+            bottom: 20px;
+            left: 12px;
+            right: 12px;
+            background: rgba(255, 255, 255, 0.95);
+            padding: 10px 8px;
+            border-radius: 10px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.25);
+            z-index: 1000;
+            display: flex;
+            justify-content: space-around;
+            align-items: center;
+            text-align: center;
+            border-left: 5px solid #007bff;
+        }
+        .stat-box {
+            flex: 1;
+            padding: 0 2px;
+        }
+        .stat-box:not(:last-child) {
+            border-right: 1px solid #ddd;
+        }
+        .stat-label {
+            font-size: 10px;
+            color: #666;
+            text-transform: uppercase;
+            font-weight: bold;
+            margin-bottom: 2px;
+        }
+        .stat-value {
+            font-size: 13px;
+            color: #222;
+            font-weight: bold;
+        }
+
+        /* Janela Modal de Resumo */
+        #modal-resumo {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; width: 100vw; height: 100vh;
+            background: rgba(0,0,0,0.5);
+            z-index: 4000;
+            justify-content: center;
+            align-items: center;
+        }
+        .modal-content {
+            background: white;
+            padding: 25px;
+            border-radius: 12px;
+            width: 300px;
+            text-align: center;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+        }
+        .modal-content h3 { margin-top: 0; color: #28a745; font-size: 20px; }
+        .modal-content p { font-size: 15px; color: #333; margin: 12px 0; }
+        .modal-content button { background-color: #007bff; margin-top: 15px; padding: 12px; font-size: 14px; }
+    </style>
+</head>
+<body>
+
+    <div id="map"></div>
+
+    <!-- Botão de Menu Compacto (Apenas a palavra Menu) -->
+    <button id="btn-toggle-panel" onclick="alternarPainel()">Menu</button>
+
+    <!-- Painel de Controle Retrátil -->
+    <div id="control-panel">
+        <h3 style="margin-top: 0; font-size: 14px; color: #333;">Planejador de Rota</h3>
+        
+        <div class="input-group">
+            <label for="origem">Endereco de Origem:</label>
+            <input type="text" id="origem" placeholder="Digite a origem..." oninput="buscarSugestoes(this.value, 'sugestoes-origem', 'origem')">
+            <div id="sugestoes-origem" class="suggestions-list"></div>
+        </div>
+
+        <button class="btn-gps" onclick="usarMinhaLocalizacao()">Usar Minha Localizacao (GPS)</button>
+        
+        <div class="input-group">
+            <label for="destino">Endereco de Destino:</label>
+            <input type="text" id="destino" placeholder="Digite o destino..." oninput="buscarSugestoes(this.value, 'sugestoes-destino', 'destino')">
+            <div id="sugestoes-destino" class="suggestions-list"></div>
+        </div>
+
+        <button onclick="tracarRotaFinal()">Tracar Rota Teorica</button>
+
+        <hr style="margin: 12px 0; border: 0; border-top: 1px solid #ddd;">
+
+        <h3 style="margin-top: 0; font-size: 14px; color: #333;">Gravador de Percurso (Moto)</h3>
+        <button id="btn-iniciar" class="btn-gravar" onclick="iniciarGravacao()">Iniciar Gravacao GPS</button>
+        <button id="btn-parar" class="btn-parar" onclick="pararGravacao()" style="display:none;">Parar e Salvar Trajeto</button>
+    </div>
+
+    <!-- Painel de Bordo Inferior (Status, Distância, Tempo e Velocidade) -->
+    <div id="info-panel">
+        <div class="stat-box">
+            <div class="stat-label">Status</div>
+            <div id="status-painel" class="stat-value" style="color: #007bff;">Pronto</div>
+        </div>
+        <div class="stat-box">
+            <div class="stat-label">Distancia</div>
+            <div id="distancia" class="stat-value">0.0 km</div>
+        </div>
+        <div class="stat-box">
+            <div class="stat-label">Tempo</div>
+            <div id="tempo-decorrido" class="stat-value">0 min</div>
+        </div>
+        <div class="stat-box">
+            <div class="stat-label">Veloc.</div>
+            <div id="velocidade" class="stat-value">0 km/h</div>
+        </div>
+    </div>
+
+    <!-- Janela Modal de Resumo -->
+    <div id="modal-resumo">
+        <div class="modal-content">
+            <h3>Percurso Concluido!</h3>
+            <p><strong>Distancia Percorrida:</strong> <br><span id="modal-distancia" style="font-size: 20px; color: #007bff; font-weight: bold;">0.0 km</span></p>
+            <p><strong>Tempo Total:</strong> <br><span id="modal-tempo" style="font-size: 20px; color: #333; font-weight: bold;">0 min</span></p>
+            <button onclick="fecharModal()">OK / Fechar</button>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        var map, markerOrigem, markerDestino, polylineRota;
+        var coordOrigemSelecionada = null;
+        var coordDestinoSelecionada = null;
+        var watchId = null;
+        var pontosTrajeto = [];
+        var distanciaTotalMeters = 0;
+        var tempoInicioViagem = null;
+        var timerInterval = null;
+        var timeoutId = null;
+
+        window.onload = function() {
+            try {
+                map = L.map('map', { zoomControl: false }).setView([-18.9186, -48.2772], 13);
+                L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+                L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
+                    maxZoom: 19,
+                    attribution: 'Tiles &copy; Esri'
+                }).addTo(map);
+
+                usarMinhaLocalizacao();
+            } catch (err) {
+                console.error(err);
+            }
+        };
+
+        function alternarPainel() {
+            var panel = document.getElementById('control-panel');
+            panel.style.display = (panel.style.display === 'block') ? 'none' : 'block';
+        }
+
+        function buscarSugestoes(termo, idContainer, idInput) {
+            clearTimeout(timeoutId);
+            var container = document.getElementById(idContainer);
+            container.innerHTML = "";
+
+            if (!termo || termo.trim().length < 3) return;
+
+            timeoutId = setTimeout(async function() {
+                try {
+                    var busca = termo + ", Uberlandia, MG";
+                    var url = "https://nominatim.openstreetmap.org/search?format=json&q=" + encodeURIComponent(busca) + "&limit=5";
+                    var response = await fetch(url);
+                    var data = await response.json();
+
+                    container.innerHTML = "";
+                    if (data && data.length > 0) {
+                        data.forEach(function(local) {
+                            var div = document.createElement('div');
+                            div.className = 'suggestion-item';
+                            div.innerText = local.display_name;
+                            
+                            div.onclick = function() {
+                                document.getElementById(idInput).value = local.display_name;
+                                var latLng = [parseFloat(local.lat), parseFloat(local.lon)];
+                                
+                                if (idInput === 'origem') {
+                                    coordOrigemSelecionada = latLng;
+                                } else {
+                                    coordDestinoSelecionada = latLng;
+                                }
+                                container.innerHTML = "";
+                            };
+                            container.appendChild(div);
+                        });
+                    }
+                } catch (e) {
+                    console.error("Erro na busca:", e);
+                }
+            }, 350);
+        }
+
+        document.addEventListener('click', function(e) {
+            if (!e.target.closest('.input-group') && !e.target.closest('#control-panel') && !e.target.closest('#btn-toggle-panel')) {
+                document.querySelectorAll('.suggestions-list').forEach(function(el) { el.innerHTML = ''; });
+            }
+        });
+
+        var gpsConfig = { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 };
+
+        function usarMinhaLocalizacao() {
+            if (!navigator.geolocation) {
+                alert("Navegador sem suporte a GPS.");
+                return;
+            }
+
+            document.getElementById('origem').value = "Buscando GPS...";
+            document.getElementById('status-painel').innerText = "Buscando";
+
+            navigator.geolocation.getCurrentPosition(
+                function(posicao) {
+                    var lat = posicao.coords.latitude;
+                    var lng = posicao.coords.longitude;
+                    
+                    coordOrigemSelecionada = [lat, lng];
+                    document.getElementById('origem').value = "Minha Localizacao Atual (GPS)";
+
+                    if (markerOrigem) {
+                        markerOrigem.setLatLng(coordOrigemSelecionada);
+                    } else {
+                        markerOrigem = L.marker(coordOrigemSelecionada).addTo(map);
+                    }
+                    markerOrigem.bindPopup("<b>Voce esta aqui (GPS Real)</b>").openPopup();
+                    map.setView(coordOrigemSelecionada, 17);
+                    document.getElementById('status-painel').innerText = "Pronto";
+                },
+                function(erro) {
+                    document.getElementById('origem').value = "";
+                    document.getElementById('status-painel').innerText = "Erro GPS";
+                },
+                gpsConfig
+            );
+        }
+
+        async function tracarRotaFinal() {
+            if (!coordOrigemSelecionada || !coordDestinoSelecionada) {
+                alert("Selecione a origem e o destino na lista.");
+                return;
+            }
+
+            document.getElementById('status-painel').innerText = "Calc...";
+            alternarPainel();
+
+            try {
+                if (markerOrigem) markerOrigem.setLatLng(coordOrigemSelecionada);
+                else markerOrigem = L.marker(coordOrigemSelecionada).addTo(map);
+
+                if (markerDestino) markerDestino.setLatLng(coordDestinoSelecionada);
+                else markerDestino = L.marker(coordDestinoSelecionada).addTo(map);
+
+                var urlRota = "https://router.project-osrm.org/route/v1/driving/" + 
+                              coordOrigemSelecionada[1] + "," + coordOrigemSelecionada[0] + ";" + 
+                              coordDestinoSelecionada[1] + "," + coordDestinoSelecionada[0] + 
+                              "?overview=full&geometries=geojson";
+                
+                var resRota = await fetch(urlRota);
+                var dataRota = await resRota.json();
+
+                if (!dataRota.routes || dataRota.routes.length === 0) {
+                    alert("Rota nao encontrada.");
+                    return;
+                }
+
+                var route = dataRota.routes[0];
+                var distanciaKm = (route.distance / 1000).toFixed(1);
+                var tempoMin = Math.round(route.duration / 60);
+
+                document.getElementById('status-painel').innerText = "Em Rota";
+                document.getElementById('distancia').innerText = distanciaKm + " km";
+                document.getElementById('tempo-decorrido').innerText = tempoMin + " min";
+                document.getElementById('velocidade').innerText = "--";
+
+                if (polylineRota) map.removeLayer(polylineRota);
+                var coords = route.geometry.coordinates.map(function(coord) { return [coord[1], coord[0]]; });
+                polylineRota = L.polyline(coords, { color: 'blue', weight: 5 }).addTo(map);
+                map.fitBounds(polylineRota.getBounds());
+
+            } catch (error) {
+                alert("Erro ao tracar rota.");
+            }
+        }
+
+        function calcularDistanciaMetros(lat1, lon1, lat2, lon2) {
+            var R = 6371e3;
+            var dLat = (lat2 - lat1) * Math.PI / 180;
+            var dLon = (lon2 - lon1) * Math.PI / 180;
+            var a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                    Math.sin(dLon/2) * Math.sin(dLon/2);
+            var c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+            return R * c;
+        }
+
+        function iniciarGravacao() {
+            if (!navigator.geolocation) {
+                alert("Navegador sem suporte a GPS.");
+                return;
+            }
+
+            pontosTrajeto = [];
+            distanciaTotalMeters = 0;
+            tempoInicioViagem = new Date();
+
+            document.getElementById('distancia').innerText = "0.0 km";
+            document.getElementById('status-painel').innerText = "Gravando";
+            document.getElementById('tempo-decorrido').innerText = "0 min";
+            alternarPainel();
+
+            document.getElementById('btn-iniciar').style.display = 'none';
+            document.getElementById('btn-parar').style.display = 'block';
+
+            if (polylineRota) map.removeLayer(polylineRota);
+
+            // Atualiza o relógio de tempo decorrido a cada segundo
+            if (timerInterval) clearInterval(timerInterval);
+            timerInterval = setInterval(function() {
+                var agora = new Date();
+                var diffSecs = Math.floor((agora - tempoInicioViagem) / 1000);
+                var mins = Math.floor(diffSecs / 60);
+                var secs = diffSecs % 60;
+                document.getElementById('tempo-decorrido').innerText = mins + "m " + secs + "s";
+            }, 1000);
+
+            watchId = navigator.geolocation.watchPosition(
+                function(posicao) {
+                    var lat = posicao.coords.latitude;
+                    var lng = posicao.coords.longitude;
+                    var novaCoord = [lat, lng];
+                    
+                    var velocidadeKmh = posicao.coords.speed ? (posicao.coords.speed * 3.6).toFixed(0) : 0;
+                    document.getElementById('velocidade').innerText = velocidadeKmh + " km/h";
+
+                    if (pontosTrajeto.length > 0) {
+                        var ultimoPonto = pontosTrajeto[pontosTrajeto.length - 1];
+                        var distanciaTrecho = calcularDistanciaMetros(ultimoPonto[0], ultimoPonto[1], lat, lng);
+                        
+                        if (distanciaTrecho > 2) {
+                            distanciaTotalMeters += distanciaTrecho;
+                            document.getElementById('distancia').innerText = (distanciaTotalMeters / 1000).toFixed(2) + " km";
+                            pontosTrajeto.push(novaCoord);
+
+                            if (polylineRota) {
+                                polylineRota.setLatLngs(pontosTrajeto);
+                            } else {
+                                polylineRota = L.polyline(pontosTrajeto, { color: '#ff00ff', weight: 6 }).addTo(map);
+                            }
+                        }
+                    } else {
+                        pontosTrajeto.push(novaCoord);
+                    }
+
+                    if (markerOrigem) {
+                        markerOrigem.setLatLng(novaCoord);
+                    } else {
+                        markerOrigem = L.marker(novaCoord).addTo(map).bindPopup('Moto em Movimento');
+                    }
+                    map.setView(novaCoord, 17);
+                },
+                function(erro) {
+                    console.error("Erro no watchPosition:", erro.message);
+                },
+                gpsConfig
+            );
+        }
+
+        function pararGravacao() {
+            if (watchId !== null) {
+                navigator.geolocation.clearWatch(watchId);
+                watchId = null;
+            }
+            if (timerInterval) {
+                clearInterval(timerInterval);
+                timerInterval = null;
+            }
+
+            var tempoFimViagem = new Date();
+            var diffMinutos = Math.round((tempoFimViagem - tempoInicioViagem) / 60000);
+            if (diffMinutos < 1) diffMinutos = 1;
+
+            var distanciaKmFinal = (distanciaTotalMeters / 1000).toFixed(2);
+
+            document.getElementById('modal-distancia').innerText = distanciaKmFinal + " km";
+            document.getElementById('modal-tempo').innerText = diffMinutos + " minuto(s)";
+            document.getElementById('modal-resumo').style.display = 'flex';
+
+            document.getElementById('status-painel').innerText = "Salvo";
+            document.getElementById('velocidade').innerText = "0 km/h";
+            document.getElementById('btn-iniciar').style.display = 'block';
+            document.getElementById('btn-parar').style.display = 'none';
+        }
+
+        function fecharModal() {
+            document.getElementById('modal-resumo').style.display = 'none';
+        }
+    </script>
+</body>
+</html>
