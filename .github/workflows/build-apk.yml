@@ -18,11 +18,11 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Configurar Java JDK 17
+      - name: Configurar Java JDK 21
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
-          java-version: '17'
+          java-version: '21'
 
       - name: Preparar pasta web e Capacitor
         run: |
@@ -40,7 +40,7 @@ jobs:
           # Adicionar permissoes de GPS no AndroidManifest
           sed -i 's/<uses-permission android:name="android.permission.INTERNET" \/>/<uses-permission android:name="android.permission.INTERNET" \/>\n    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" \/>\n    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" \/>/' android/app/src/main/AndroidManifest.xml
           
-          # Forcar compileSdk 35, targetSdk 35 e minSdk 23 exigidos pelas dependencias
+          # Forcar compileSdk 35, targetSdk 35 e minSdk 23
           echo "android { compileSdk 35; defaultConfig { targetSdk 35; minSdk 23; } }" >> android/app/build.gradle
 
       - name: Compilar o APK (Debug Assinado)
