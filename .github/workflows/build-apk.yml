@@ -37,15 +37,15 @@ jobs:
 
       - name: Gerar e Inserir Icones Oficiais do Capacitor
         run: |
-          # Instala a ferramenta oficial de assets para gerar os icones adaptativos do Android
-          npm install @capacitor-assets/cli --save-dev
+          # Instala o pacote correto do capacitor assets
+          npm install @capacitor/assets --save-dev
           
-          # Gera os icones automaticamente a partir do icon-512.png presente na raiz
+          # Gera os icones a partir do icon-512.png
           if [ -f icon-512.png ]; then
-            npx @capacitor-assets/cli generate --android --iconBackgroundColor "#ffffff" --iconBackgroundColorDark "#ffffff"
+            npx @capacitor/assets generate --android --iconBackgroundColor "#ffffff" --iconBackgroundColorDark "#ffffff"
           elif [ -f icon-192.png ]; then
             cp icon-192.png icon-512.png
-            npx @capacitor-assets/cli generate --android --iconBackgroundColor "#ffffff" --iconBackgroundColorDark "#ffffff"
+            npx @capacitor/assets generate --android --iconBackgroundColor "#ffffff" --iconBackgroundColorDark "#ffffff"
           fi
 
       - name: Ajustar Permissoes, SDK 35 e Conflitos do Kotlin
