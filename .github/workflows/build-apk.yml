@@ -35,6 +35,21 @@ jobs:
           npx cap init "Percurso Moto" "com.percurso.moto" --web-dir=www
           npx cap add android
 
+      - name: Inserir Icones Personalizados no Android
+        run: |
+          # Substitui os icones padrao do Capacitor pelos arquivos PNG personalizados do repositorio
+          if [ -f icon-512.png ]; then
+            mkdir -p android/app/src/main/res/mipmap-xxhdpi/
+            cp icon-512.png android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png
+            cp icon-512.png android/app/src/main/res/mipmap-xxhdpi/ic_launcher_round.png
+            cp icon-512.png android/app/src/main/res/mipmap-xxhdpi/ic_launcher_foreground.png
+          elif [ -f icon-192.png ]; then
+            mkdir -p android/app/src/main/res/mipmap-xxhdpi/
+            cp icon-192.png android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png
+            cp icon-192.png android/app/src/main/res/mipmap-xxhdpi/ic_launcher_round.png
+            cp icon-192.png android/app/src/main/res/mipmap-xxhdpi/ic_launcher_foreground.png
+          fi
+
       - name: Ajustar Permissoes, SDK 35 e Conflitos do Kotlin
         run: |
           # Adicionar permissoes de GPS no AndroidManifest
