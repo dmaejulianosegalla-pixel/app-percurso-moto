@@ -35,9 +35,13 @@ jobs:
           npx cap init "Percurso Moto" "com.percurso.moto" --web-dir=www
           npx cap add android
 
-      - name: Configurar permissoes de GPS no AndroidManifest
+      - name: Configurar permissoes e Build.gradle
         run: |
+          # Adicionar permissoes de GPS no AndroidManifest
           sed -i 's/<uses-permission android:name="android.permission.INTERNET" \/>/<uses-permission android:name="android.permission.INTERNET" \/>\n    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" \/>\n    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" \/>/' android/app/src/main/AndroidManifest.xml
+          
+          # Forçar versao compativel do SDK no Gradle se necessario
+          echo "android { compileSdk 34; defaultConfig { targetSdk 34; minSdk 22; } }" >> android/app/build.gradle
 
       - name: Compilar o APK (Debug Assinado)
         run: |
