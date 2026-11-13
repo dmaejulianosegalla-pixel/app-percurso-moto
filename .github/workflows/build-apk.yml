@@ -35,17 +35,33 @@ jobs:
           npx cap init "Percurso Moto" "com.percurso.moto" --web-dir=www
           npx cap add android
 
-      - name: Gerar e Inserir Icones Oficiais do Capacitor
+      - name: Inserir Icones Personalizados Corretamente no Android
         run: |
-          # Instala o pacote correto do capacitor assets
-          npm install @capacitor/assets --save-dev
-          
-          # Gera os icones a partir do icon-512.png
+          # Cria as pastas mipmap do Android e injeta a imagem da moto em todas as resolucoes
           if [ -f icon-512.png ]; then
-            npx @capacitor/assets generate --android --iconBackgroundColor "#ffffff" --iconBackgroundColorDark "#ffffff"
-          elif [ -f icon-192.png ]; then
-            cp icon-192.png icon-512.png
-            npx @capacitor/assets generate --android --iconBackgroundColor "#ffffff" --iconBackgroundColorDark "#ffffff"
+            mkdir -p android/app/src/main/res/mipmap-hdpi
+            mkdir -p android/app/src/main/res/mipmap-mdpi
+            mkdir -p android/app/src/main/res/mipmap-xhdpi
+            mkdir -p android/app/src/main/res/mipmap-xxhdpi
+            mkdir -p android/app/src/main/res/mipmap-xxxhdpi
+            
+            cp icon-512.png android/app/src/main/res/mipmap-hdpi/ic_launcher.png
+            cp icon-512.png android/app/src/main/res/mipmap-mdpi/ic_launcher.png
+            cp icon-512.png android/app/src/main/res/mipmap-xhdpi/ic_launcher.png
+            cp icon-512.png android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png
+            cp icon-512.png android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
+
+            cp icon-512.png android/app/src/main/res/mipmap-hdpi/ic_launcher_round.png
+            cp icon-512.png android/app/src/main/res/mipmap-mdpi/ic_launcher_round.png
+            cp icon-512.png android/app/src/main/res/mipmap-xhdpi/ic_launcher_round.png
+            cp icon-512.png android/app/src/main/res/mipmap-xxhdpi/ic_launcher_round.png
+            cp icon-512.png android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.png
+            
+            cp icon-512.png android/app/src/main/res/mipmap-hdpi/ic_launcher_foreground.png
+            cp icon-512.png android/app/src/main/res/mipmap-mdpi/ic_launcher_foreground.png
+            cp icon-512.png android/app/src/main/res/mipmap-xhdpi/ic_launcher_foreground.png
+            cp icon-512.png android/app/src/main/res/mipmap-xxhdpi/ic_launcher_foreground.png
+            cp icon-512.png android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_foreground.png
           fi
 
       - name: Ajustar Permissoes, SDK 35 e Conflitos do Kotlin
