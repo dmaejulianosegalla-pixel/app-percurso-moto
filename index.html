@@ -307,6 +307,8 @@
         var coordOrigemSelecionada = null;
         var coordDestinoSelecionada = null;
         var watchId = null;
+        var gpsPollingInterval = null;
+        var wakeLock = null;
         var pontosTrajeto = [];
         var distanciaTotalMeters = 0;
         var tempoInicioViagem = null;
@@ -321,14 +323,41 @@
                 map = L.map('map', { zoomControl: false }).setView([-18.9186, -48.2772], 13);
                 L.control.zoom({ position: 'bottomright' }).addTo(map);
 
-                // Carregar mapa inicial padrão (Ruas)
                 definirCamadaMapa('ruas');
-
                 usarMinhaLocalizacao();
             } catch (err) {
                 console.error(err);
             }
         };
+
+        // Solicita bloqueio de suspensão (Wake Lock) para manter CPU/GPS ativos
+        async function ativarWakeLock() {
+            try {
+                if ('wakeLock' in navigator) {
+                    wakeLock = await navigator.wakeLock.request('screen');
+                    console.log('Wake Lock ativo para rastreamento continuo.');
+                }
+            } catch (err) {
+                console.warn('Wake Lock nao disponivel:', err.message);
+            }
+        }
+
+        function liberarWakeLock() {
+            if (wakeLock !== null) {
+                wakeLock.release().then(function() {
+                    wakeLock = null;
+                }).catch(function(err) {
+                    console.warn(err);
+                });
+            }
+        }
+
+        // Reativa Wake Lock caso o app volte para primeiro plano
+        document.addEventListener('visibilitychange', function() {
+            if (document.visibilityState === 'visible' && watchId !== null) {
+                ativarWakeLock();
+            }
+        });
 
         function definirCamadaMapa(estilo) {
             if (tileLayerAtual) {
@@ -336,7 +365,6 @@
             }
 
             if (estilo === 'ruas') {
-                // Mapa padrão de ruas (Esri)
                 tileLayerAtual = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
                     maxZoom: 19,
                     attribution: 'Tiles &copy; Esri'
@@ -344,10 +372,9 @@
                 tipoEstiloMapa = 'ruas';
                 document.getElementById('btn-estilo-mapa').innerText = "🛰️ Satélite";
             } else {
-                // Visão de Satélite de alta definição (Esri World Imagery)
                 tileLayerAtual = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
                     maxZoom: 19,
-                    attribution: 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community'
+                    attribution: 'Tiles &copy; Esri'
                 });
                 tipoEstiloMapa = 'satelite';
                 document.getElementById('btn-estilo-mapa').innerText = "🗺️ Ruas";
@@ -507,6 +534,62 @@
             return R * c;
         }
 
+        // Função centralizada de processamento de coordenadas (usada pelo watchPosition e pelo polling ativo)
+        function processarPosicaoGPS(posicao) {
+            var lat = posicao.coords.latitude;
+            var lng = posicao.coords.longitude;
+            var precisao = posicao.coords.accuracy || 0;
+            var altAtual = posicao.coords.altitude ? Math.round(posicao.coords.altitude) : null;
+            var novaCoord = [lat, lng];
+
+            // Ignora leituras de satélite com margem de erro muito alta (> 35m)
+            if (precisao > 35 && pontosTrajeto.length > 0) {
+                return;
+            }
+            
+            var velocidadeKmh = posicao.coords.speed ? (posicao.coords.speed * 3.6).toFixed(0) : 0;
+            document.getElementById('velocidade').innerText = velocidadeKmh + " km/h";
+
+            if (altAtual !== null) {
+                document.getElementById('altitude').innerText = altAtual + " m";
+                if (altitudeAnterior !== null) {
+                    var diferencaAlt = altAtual - altitudeAnterior;
+                    if (diferencaAlt > 1 && diferencaAlt < 20) {
+                        ganhoElevacaoTotal += diferencaAlt;
+                        document.getElementById('ganho-elevacao').innerText = ganhoElevacaoTotal + " m";
+                    }
+                }
+                altitudeAnterior = altAtual;
+            }
+
+            if (pontosTrajeto.length > 0) {
+                var ultimoPonto = pontosTrajeto[pontosTrajeto.length - 1];
+                var distanciaTrecho = calcularDistanciaMetros(ultimoPonto[0], ultimoPonto[1], lat, lng);
+                
+                // Registra movimento real a partir de 2.5m para desenhar curvas detalhadas
+                if (distanciaTrecho >= 2.5 && distanciaTrecho < 1500) {
+                    distanciaTotalMeters += distanciaTrecho;
+                    document.getElementById('distancia').innerText = (distanciaTotalMeters / 1000).toFixed(2) + " km";
+                    pontosTrajeto.push(novaCoord);
+
+                    if (polylineRota) {
+                        polylineRota.setLatLngs(pontosTrajeto);
+                    } else {
+                        polylineRota = L.polyline(pontosTrajeto, { color: '#ff00ff', weight: 6 }).addTo(map);
+                    }
+                }
+            } else {
+                pontosTrajeto.push(novaCoord);
+            }
+
+            if (markerOrigem) {
+                markerOrigem.setLatLng(novaCoord);
+            } else {
+                markerOrigem = L.marker(novaCoord).addTo(map).bindPopup('Moto em Movimento');
+            }
+            map.setView(novaCoord, 17);
+        }
+
         function iniciarGravacao() {
             if (!navigator.geolocation) {
                 alert("Navegador sem suporte a GPS.");
@@ -529,6 +612,9 @@
 
             if (polylineRota) map.removeLayer(polylineRota);
 
+            // Ativa blindagem contra suspensão
+            ativarWakeLock();
+
             if (timerInterval) clearInterval(timerInterval);
             timerInterval = setInterval(function() {
                 var agora = new Date();
@@ -540,63 +626,28 @@
 
             var gpsConfigForte = { 
                 enableHighAccuracy: true, 
-                maximumAge: 1000, 
-                timeout: 10000 
+                maximumAge: 0, 
+                timeout: 8000 
             };
 
+            // Rastreamento contínuo principal
             watchId = navigator.geolocation.watchPosition(
-                function(posicao) {
-                    var lat = posicao.coords.latitude;
-                    var lng = posicao.coords.longitude;
-                    var altAtual = posicao.coords.altitude ? Math.round(posicao.coords.altitude) : null;
-                    var novaCoord = [lat, lng];
-                    
-                    var velocidadeKmh = posicao.coords.speed ? (posicao.coords.speed * 3.6).toFixed(0) : 0;
-                    document.getElementById('velocidade').innerText = velocidadeKmh + " km/h";
-
-                    if (altAtual !== null) {
-                        document.getElementById('altitude').innerText = altAtual + " m";
-                        if (altitudeAnterior !== null) {
-                            var diferencaAlt = altAtual - altitudeAnterior;
-                            if (diferencaAlt > 1 && diferencaAlt < 20) {
-                                ganhoElevacaoTotal += diferencaAlt;
-                                document.getElementById('ganho-elevacao').innerText = ganhoElevacaoTotal + " m";
-                            }
-                        }
-                        altitudeAnterior = altAtual;
-                    }
-
-                    if (pontosTrajeto.length > 0) {
-                        var ultimoPonto = pontosTrajeto[pontosTrajeto.length - 1];
-                        var distanciaTrecho = calcularDistanciaMetros(ultimoPonto[0], ultimoPonto[1], lat, lng);
-                        
-                        if (distanciaTrecho > 2 && distanciaTrecho < 1500) {
-                            distanciaTotalMeters += distanciaTrecho;
-                            document.getElementById('distancia').innerText = (distanciaTotalMeters / 1000).toFixed(2) + " km";
-                            pontosTrajeto.push(novaCoord);
-
-                            if (polylineRota) {
-                                polylineRota.setLatLngs(pontosTrajeto);
-                            } else {
-                                polylineRota = L.polyline(pontosTrajeto, { color: '#ff00ff', weight: 6 }).addTo(map);
-                            }
-                        }
-                    } else {
-                        pontosTrajeto.push(novaCoord);
-                    }
-
-                    if (markerOrigem) {
-                        markerOrigem.setLatLng(novaCoord);
-                    } else {
-                        markerOrigem = L.marker(novaCoord).addTo(map).bindPopup('Moto em Movimento');
-                    }
-                    map.setView(novaCoord, 17);
-                },
+                processarPosicaoGPS,
                 function(erro) {
                     console.error("Erro no watchPosition:", erro.message);
                 },
                 gpsConfigForte
             );
+
+            // Polling de backup a cada 3 segundos para forçar o chip de GPS a não hibernar
+            if (gpsPollingInterval) clearInterval(gpsPollingInterval);
+            gpsPollingInterval = setInterval(function() {
+                navigator.geolocation.getCurrentPosition(
+                    processarPosicaoGPS,
+                    function() {},
+                    { enableHighAccuracy: true, maximumAge: 0, timeout: 5000 }
+                );
+            }, 3000);
         }
 
         function pararGravacao() {
@@ -604,10 +655,17 @@
                 navigator.geolocation.clearWatch(watchId);
                 watchId = null;
             }
+            if (gpsPollingInterval !== null) {
+                clearInterval(gpsPollingInterval);
+                gpsPollingInterval = null;
+            }
             if (timerInterval) {
                 clearInterval(timerInterval);
                 timerInterval = null;
             }
+
+            // Libera o bloqueio de suspensão para economizar bateria após o trajeto
+            liberarWakeLock();
 
             var tempoFimViagem = new Date();
             var diffMinutos = Math.round((tempoFimViagem - tempoInicioViagem) / 60000);
