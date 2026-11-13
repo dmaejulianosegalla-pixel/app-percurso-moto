@@ -302,13 +302,18 @@
     <script>
         var map, markerOrigem, markerDestino, polylineRota;
         var tileLayerAtual = null;
-        var tipoEstiloMapa = 'ruas'; // 'ruas' ou 'satelite'
+        var tipoEstiloMapa = 'ruas';
         
         var coordOrigemSelecionada = null;
         var coordDestinoSelecionada = null;
         var watchId = null;
         var gpsPollingInterval = null;
         var wakeLock = null;
+        
+        // Elementos para o motor de áudio silencioso (Mantém o app ativo no Android em segundo plano)
+        var audioContext = null;
+        var audioSource = null;
+
         var pontosTrajeto = [];
         var distanciaTotalMeters = 0;
         var tempoInicioViagem = null;
@@ -330,12 +335,48 @@
             }
         };
 
-        // Solicita bloqueio de suspensão (Wake Lock) para manter CPU/GPS ativos
+        // Motor de Áudio Silencioso para enganar o gerenciador de bateria da Samsung/Android
+        function iniciarAudioSilencioso() {
+            try {
+                window.AudioContext = window.AudioContext || window.webkitAudioContext;
+                audioContext = new AudioContext();
+                
+                // Cria um buffer de áudio em branco de 1 segundo
+                var buffer = audioContext.createBuffer(1, audioContext.sampleRate, audioContext.sampleRate);
+                audioSource = audioContext.createBufferSource();
+                audioSource.buffer = buffer;
+                audioSource.loop = true;
+                
+                // Conecta e toca silenciosamente
+                audioSource.connect(audioContext.destination);
+                audioSource.start(0);
+                console.log('Áudio silencioso em loop ativado.');
+            } catch (e) {
+                console.warn('Erro ao iniciar áudio silencioso:', e);
+            }
+        }
+
+        function pararAudioSilencioso() {
+            try {
+                if (audioSource) {
+                    audioSource.stop();
+                    audioSource.disconnect();
+                    audioSource = null;
+                }
+                if (audioContext && audioContext.state !== 'closed') {
+                    audioContext.close();
+                    audioContext = null;
+                }
+                console.log('Áudio silencioso desativado.');
+            } catch (e) {
+                console.warn('Erro ao parar áudio:', e);
+            }
+        }
+
         async function ativarWakeLock() {
             try {
                 if ('wakeLock' in navigator) {
                     wakeLock = await navigator.wakeLock.request('screen');
-                    console.log('Wake Lock ativo para rastreamento continuo.');
                 }
             } catch (err) {
                 console.warn('Wake Lock nao disponivel:', err.message);
@@ -346,13 +387,10 @@
             if (wakeLock !== null) {
                 wakeLock.release().then(function() {
                     wakeLock = null;
-                }).catch(function(err) {
-                    console.warn(err);
-                });
+                }).catch(function(err) {});
             }
         }
 
-        // Reativa Wake Lock caso o app volte para primeiro plano
         document.addEventListener('visibilitychange', function() {
             if (document.visibilityState === 'visible' && watchId !== null) {
                 ativarWakeLock();
@@ -534,7 +572,6 @@
             return R * c;
         }
 
-        // Função centralizada de processamento de coordenadas (usada pelo watchPosition e pelo polling ativo)
         function processarPosicaoGPS(posicao) {
             var lat = posicao.coords.latitude;
             var lng = posicao.coords.longitude;
@@ -542,7 +579,6 @@
             var altAtual = posicao.coords.altitude ? Math.round(posicao.coords.altitude) : null;
             var novaCoord = [lat, lng];
 
-            // Ignora leituras de satélite com margem de erro muito alta (> 35m)
             if (precisao > 35 && pontosTrajeto.length > 0) {
                 return;
             }
@@ -566,7 +602,6 @@
                 var ultimoPonto = pontosTrajeto[pontosTrajeto.length - 1];
                 var distanciaTrecho = calcularDistanciaMetros(ultimoPonto[0], ultimoPonto[1], lat, lng);
                 
-                // Registra movimento real a partir de 2.5m para desenhar curvas detalhadas
                 if (distanciaTrecho >= 2.5 && distanciaTrecho < 1500) {
                     distanciaTotalMeters += distanciaTrecho;
                     document.getElementById('distancia').innerText = (distanciaTotalMeters / 1000).toFixed(2) + " km";
@@ -612,8 +647,9 @@
 
             if (polylineRota) map.removeLayer(polylineRota);
 
-            // Ativa blindagem contra suspensão
+            // Ativa as blindagens de execução em segundo plano
             ativarWakeLock();
+            iniciarAudioSilencioso();
 
             if (timerInterval) clearInterval(timerInterval);
             timerInterval = setInterval(function() {
@@ -630,7 +666,6 @@
                 timeout: 8000 
             };
 
-            // Rastreamento contínuo principal
             watchId = navigator.geolocation.watchPosition(
                 processarPosicaoGPS,
                 function(erro) {
@@ -639,7 +674,6 @@
                 gpsConfigForte
             );
 
-            // Polling de backup a cada 3 segundos para forçar o chip de GPS a não hibernar
             if (gpsPollingInterval) clearInterval(gpsPollingInterval);
             gpsPollingInterval = setInterval(function() {
                 navigator.geolocation.getCurrentPosition(
@@ -664,8 +698,9 @@
                 timerInterval = null;
             }
 
-            // Libera o bloqueio de suspensão para economizar bateria após o trajeto
+            // Libera os bloqueios e o áudio em segundo plano
             liberarWakeLock();
+            pararAudioSilencioso();
 
             var tempoFimViagem = new Date();
             var diffMinutos = Math.round((tempoFimViagem - tempoInicioViagem) / 60000);
