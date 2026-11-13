@@ -32,6 +32,23 @@
             width: auto;
         }
 
+        #btn-estilo-mapa {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            background: #343a40;
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 6px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+            z-index: 2000;
+            font-weight: bold;
+            font-size: 13px;
+            cursor: pointer;
+            width: auto;
+        }
+
         #control-panel {
             position: absolute;
             top: 55px;
@@ -114,10 +131,10 @@
         #info-panel {
             position: absolute;
             bottom: 20px;
-            left: 12px;
-            right: 12px;
-            background: rgba(255, 255, 255, 0.95);
-            padding: 10px 8px;
+            left: 10px;
+            right: 10px;
+            background: rgba(255, 255, 255, 0.96);
+            padding: 8px 4px;
             border-radius: 10px;
             box-shadow: 0 4px 15px rgba(0,0,0,0.25);
             z-index: 1000;
@@ -129,20 +146,20 @@
         }
         .stat-box {
             flex: 1;
-            padding: 0 2px;
+            padding: 0 1px;
         }
         .stat-box:not(:last-child) {
             border-right: 1px solid #ddd;
         }
         .stat-label {
-            font-size: 10px;
+            font-size: 9px;
             color: #666;
             text-transform: uppercase;
             font-weight: bold;
             margin-bottom: 2px;
         }
         .stat-value {
-            font-size: 13px;
+            font-size: 11px;
             color: #222;
             font-weight: bold;
         }
@@ -206,6 +223,7 @@
     <div id="map"></div>
 
     <button id="btn-toggle-panel" onclick="alternarPainel()">Menu</button>
+    <button id="btn-estilo-mapa" onclick="alternarEstiloMapa()">🛰️ Satélite</button>
 
     <div id="control-panel">
         <h3 style="margin-top: 0; font-size: 14px; color: #333;">Planejador de Rota</h3>
@@ -234,22 +252,27 @@
         <button class="btn-historico" onclick="abrirHistorico()">Ver Historico de Percursos</button>
     </div>
 
+    <!-- Barra de Status com Altitudes e Elevação -->
     <div id="info-panel">
         <div class="stat-box">
-            <div class="stat-label">Status</div>
-            <div id="status-painel" class="stat-value" style="color: #007bff;">Pronto</div>
-        </div>
-        <div class="stat-box">
-            <div class="stat-label">Distancia</div>
+            <div class="stat-label">Dist</div>
             <div id="distancia" class="stat-value">0.0 km</div>
         </div>
         <div class="stat-box">
             <div class="stat-label">Tempo</div>
-            <div id="tempo-decorrido" class="stat-value">0 min</div>
+            <div id="tempo-decorrido" class="stat-value">0m</div>
         </div>
         <div class="stat-box">
-            <div class="stat-label">Veloc.</div>
+            <div class="stat-label">Veloc</div>
             <div id="velocidade" class="stat-value">0 km/h</div>
+        </div>
+        <div class="stat-box">
+            <div class="stat-label">Alt</div>
+            <div id="altitude" class="stat-value">0 m</div>
+        </div>
+        <div class="stat-box">
+            <div class="stat-label">Ganho</div>
+            <div id="ganho-elevacao" class="stat-value">0 m</div>
         </div>
     </div>
 
@@ -257,8 +280,9 @@
     <div id="modal-resumo">
         <div class="modal-content">
             <h3>Percurso Concluido!</h3>
-            <p><strong>Distancia Percorrida:</strong> <br><span id="modal-distancia" style="font-size: 18px; color: #007bff; font-weight: bold;">0.0 km</span></p>
-            <p><strong>Tempo Total:</strong> <br><span id="modal-tempo" style="font-size: 18px; color: #333; font-weight: bold;">0 min</span></p>
+            <p><strong>Distancia:</strong> <span id="modal-distancia" style="color: #007bff; font-weight: bold;">0.0 km</span></p>
+            <p><strong>Tempo:</strong> <span id="modal-tempo" style="font-weight: bold;">0 min</span></p>
+            <p><strong>Ganho de Elevação:</strong> <span id="modal-ganho" style="color: #28a745; font-weight: bold;">0 m</span></p>
             <button onclick="fecharModal()">OK / Fechar</button>
         </div>
     </div>
@@ -277,6 +301,9 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
         var map, markerOrigem, markerDestino, polylineRota;
+        var tileLayerAtual = null;
+        var tipoEstiloMapa = 'ruas'; // 'ruas' ou 'satelite'
+        
         var coordOrigemSelecionada = null;
         var coordDestinoSelecionada = null;
         var watchId = null;
@@ -285,22 +312,56 @@
         var tempoInicioViagem = null;
         var timerInterval = null;
         var timeoutId = null;
+        
+        var altitudeAnterior = null;
+        var ganhoElevacaoTotal = 0;
 
         window.onload = function() {
             try {
                 map = L.map('map', { zoomControl: false }).setView([-18.9186, -48.2772], 13);
                 L.control.zoom({ position: 'bottomright' }).addTo(map);
 
-                L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
-                    maxZoom: 19,
-                    attribution: 'Tiles &copy; Esri'
-                }).addTo(map);
+                // Carregar mapa inicial padrão (Ruas)
+                definirCamadaMapa('ruas');
 
                 usarMinhaLocalizacao();
             } catch (err) {
                 console.error(err);
             }
         };
+
+        function definirCamadaMapa(estilo) {
+            if (tileLayerAtual) {
+                map.removeLayer(tileLayerAtual);
+            }
+
+            if (estilo === 'ruas') {
+                // Mapa padrão de ruas (Esri)
+                tileLayerAtual = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
+                    maxZoom: 19,
+                    attribution: 'Tiles &copy; Esri'
+                });
+                tipoEstiloMapa = 'ruas';
+                document.getElementById('btn-estilo-mapa').innerText = "🛰️ Satélite";
+            } else {
+                // Visão de Satélite de alta definição (Esri World Imagery)
+                tileLayerAtual = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+                    maxZoom: 19,
+                    attribution: 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community'
+                });
+                tipoEstiloMapa = 'satelite';
+                document.getElementById('btn-estilo-mapa').innerText = "🗺️ Ruas";
+            }
+            tileLayerAtual.addTo(map);
+        }
+
+        function alternarEstiloMapa() {
+            if (tipoEstiloMapa === 'ruas') {
+                definirCamadaMapa('satelite');
+            } else {
+                definirCamadaMapa('ruas');
+            }
+        }
 
         function alternarPainel() {
             var panel = document.getElementById('control-panel');
@@ -349,7 +410,7 @@
         }
 
         document.addEventListener('click', function(e) {
-            if (!e.target.closest('.input-group') && !e.target.closest('#control-panel') && !e.target.closest('#btn-toggle-panel')) {
+            if (!e.target.closest('.input-group') && !e.target.closest('#control-panel') && !e.target.closest('#btn-toggle-panel') && !e.target.closest('#btn-estilo-mapa')) {
                 document.querySelectorAll('.suggestions-list').forEach(function(el) { el.innerHTML = ''; });
             }
         });
@@ -363,15 +424,16 @@
             }
 
             document.getElementById('origem').value = "Buscando GPS...";
-            document.getElementById('status-painel').innerText = "Buscando";
 
             navigator.geolocation.getCurrentPosition(
                 function(posicao) {
                     var lat = posicao.coords.latitude;
                     var lng = posicao.coords.longitude;
+                    var alt = posicao.coords.altitude ? Math.round(posicao.coords.altitude) : 0;
                     
                     coordOrigemSelecionada = [lat, lng];
                     document.getElementById('origem').value = "Minha Localizacao Atual (GPS)";
+                    document.getElementById('altitude').innerText = alt + " m";
 
                     if (markerOrigem) {
                         markerOrigem.setLatLng(coordOrigemSelecionada);
@@ -380,11 +442,9 @@
                     }
                     markerOrigem.bindPopup("<b>Voce esta aqui (GPS Real)</b>").openPopup();
                     map.setView(coordOrigemSelecionada, 17);
-                    document.getElementById('status-painel').innerText = "Pronto";
                 },
                 function(erro) {
                     document.getElementById('origem').value = "";
-                    document.getElementById('status-painel').innerText = "Erro GPS";
                 },
                 gpsConfig
             );
@@ -396,7 +456,6 @@
                 return;
             }
 
-            document.getElementById('status-painel').innerText = "Calc...";
             alternarPainel();
 
             try {
@@ -423,9 +482,8 @@
                 var distanciaKm = (route.distance / 1000).toFixed(1);
                 var tempoMin = Math.round(route.duration / 60);
 
-                document.getElementById('status-painel').innerText = "Em Rota";
                 document.getElementById('distancia').innerText = distanciaKm + " km";
-                document.getElementById('tempo-decorrido').innerText = tempoMin + " min";
+                document.getElementById('tempo-decorrido').innerText = tempoMin + "m";
                 document.getElementById('velocidade').innerText = "--";
 
                 if (polylineRota) map.removeLayer(polylineRota);
@@ -457,11 +515,13 @@
 
             pontosTrajeto = [];
             distanciaTotalMeters = 0;
+            ganhoElevacaoTotal = 0;
+            altitudeAnterior = null;
             tempoInicioViagem = new Date();
 
             document.getElementById('distancia').innerText = "0.0 km";
-            document.getElementById('status-painel').innerText = "Gravando";
-            document.getElementById('tempo-decorrido').innerText = "0 min";
+            document.getElementById('tempo-decorrido').innerText = "0m";
+            document.getElementById('ganho-elevacao').innerText = "0 m";
             alternarPainel();
 
             document.getElementById('btn-iniciar').style.display = 'none';
@@ -488,10 +548,23 @@
                 function(posicao) {
                     var lat = posicao.coords.latitude;
                     var lng = posicao.coords.longitude;
+                    var altAtual = posicao.coords.altitude ? Math.round(posicao.coords.altitude) : null;
                     var novaCoord = [lat, lng];
                     
                     var velocidadeKmh = posicao.coords.speed ? (posicao.coords.speed * 3.6).toFixed(0) : 0;
                     document.getElementById('velocidade').innerText = velocidadeKmh + " km/h";
+
+                    if (altAtual !== null) {
+                        document.getElementById('altitude').innerText = altAtual + " m";
+                        if (altitudeAnterior !== null) {
+                            var diferencaAlt = altAtual - altitudeAnterior;
+                            if (diferencaAlt > 1 && diferencaAlt < 20) {
+                                ganhoElevacaoTotal += diferencaAlt;
+                                document.getElementById('ganho-elevacao').innerText = ganhoElevacaoTotal + " m";
+                            }
+                        }
+                        altitudeAnterior = altAtual;
+                    }
 
                     if (pontosTrajeto.length > 0) {
                         var ultimoPonto = pontosTrajeto[pontosTrajeto.length - 1];
@@ -543,21 +616,21 @@
             var distanciaKmFinal = (distanciaTotalMeters / 1000).toFixed(2);
             var dataAtual = new Date().toLocaleDateString('pt-BR') + ' ' + new Date().toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit'});
 
-            // Salva no localStorage incluindo os pontos (coordenadas) do trajeto
             var historico = JSON.parse(localStorage.getItem('percursos_moto') || '[]');
             historico.unshift({
                 data: dataAtual,
                 distancia: distanciaKmFinal + " km",
                 tempo: diffMinutos + " min",
+                ganho: ganhoElevacaoTotal + " m",
                 pontos: pontosTrajeto
             });
             localStorage.setItem('percursos_moto', JSON.stringify(historico));
 
             document.getElementById('modal-distancia').innerText = distanciaKmFinal + " km";
             document.getElementById('modal-tempo').innerText = diffMinutos + " minuto(s)";
+            document.getElementById('modal-ganho').innerText = ganhoElevacaoTotal + " m";
             document.getElementById('modal-resumo').style.display = 'flex';
 
-            document.getElementById('status-painel').innerText = "Salvo";
             document.getElementById('velocidade').innerText = "0 km/h";
             document.getElementById('btn-iniciar').style.display = 'block';
             document.getElementById('btn-parar').style.display = 'none';
@@ -582,10 +655,10 @@
                     
                     var infoDiv = document.createElement('div');
                     infoDiv.className = 'history-info';
+                    var altTexto = item.ganho ? ` | Ganho: <b>${item.ganho}</b>` : '';
                     infoDiv.innerHTML = `<span>#${index+1} - ${item.data}</span><br>` +
-                                        `Distancia: <b>${item.distancia}</b> | Tempo: <b>${item.tempo}</b>`;
+                                        `Dist: <b>${item.distancia}</b> | Tempo: <b>${item.tempo}</b>${altTexto}`;
                     
-                    // Ao clicar na linha do histórico, desenha a rota no mapa e fecha o modal
                     infoDiv.onclick = function() {
                         carregarRotaNoMapa(item.pontos);
                     };
@@ -594,7 +667,7 @@
                     btnExcluir.className = 'btn-excluir-item';
                     btnExcluir.innerText = 'Excluir';
                     btnExcluir.onclick = function(e) {
-                        e.stopPropagation(); // Evita acionar o clique do infoDiv
+                        e.stopPropagation();
                         deletarItemHistorico(index);
                     };
 
@@ -618,7 +691,6 @@
 
             polylineRota = L.polyline(pontos, { color: '#ff00ff', weight: 6 }).addTo(map);
             map.fitBounds(polylineRota.getBounds());
-            document.getElementById('status-painel').innerText = "Exibindo Rota";
         }
 
         function deletarItemHistorico(index) {
@@ -626,7 +698,7 @@
                 var historico = JSON.parse(localStorage.getItem('percursos_moto') || '[]');
                 historico.splice(index, 1);
                 localStorage.setItem('percursos_moto', JSON.stringify(historico));
-                abrirHistorico(); // Atualiza a lista na tela
+                abrirHistorico();
             }
         }
 
