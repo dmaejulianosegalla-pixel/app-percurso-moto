@@ -178,8 +178,27 @@
             margin-bottom: 8px;
             text-align: left;
             font-size: 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
         }
-        .history-item span { font-weight: bold; color: #007bff; }
+        .history-info {
+            cursor: pointer;
+            flex-grow: 1;
+        }
+        .history-info span { font-weight: bold; color: #007bff; }
+        .btn-excluir-item {
+            background-color: #dc3545;
+            color: white;
+            border: none;
+            padding: 5px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            cursor: pointer;
+            width: auto;
+            margin-top: 0;
+        }
+        .btn-excluir-item:hover { background-color: #c82333; }
     </style>
 </head>
 <body>
@@ -248,11 +267,10 @@
     <div id="modal-historico">
         <div class="modal-content" style="width: 340px;">
             <h3 style="color: #007bff;">Historico de Percursos</h3>
-            <div id="lista-historico" style="max-height: 250px; overflow-y: auto; margin-top: 10px;">
+            <div id="lista-historico" style="max-height: 250px; overflow-y: auto; margin-top: 10px; text-align: left;">
                 <!-- Itens injetados via JS -->
             </div>
-            <button style="background-color: #dc3545;" onclick="limparHistorico()">Limpar Historico</button>
-            <button onclick="fecharHistorico()">Fechar</button>
+            <button onclick="fecharHistorico()" style="margin-top: 15px;">Fechar</button>
         </div>
     </div>
 
@@ -460,6 +478,12 @@
                 document.getElementById('tempo-decorrido').innerText = mins + "m " + secs + "s";
             }, 1000);
 
+            var gpsConfigForte = { 
+                enableHighAccuracy: true, 
+                maximumAge: 1000, 
+                timeout: 10000 
+            };
+
             watchId = navigator.geolocation.watchPosition(
                 function(posicao) {
                     var lat = posicao.coords.latitude;
@@ -473,7 +497,7 @@
                         var ultimoPonto = pontosTrajeto[pontosTrajeto.length - 1];
                         var distanciaTrecho = calcularDistanciaMetros(ultimoPonto[0], ultimoPonto[1], lat, lng);
                         
-                        if (distanciaTrecho > 2) {
+                        if (distanciaTrecho > 2 && distanciaTrecho < 1500) {
                             distanciaTotalMeters += distanciaTrecho;
                             document.getElementById('distancia').innerText = (distanciaTotalMeters / 1000).toFixed(2) + " km";
                             pontosTrajeto.push(novaCoord);
@@ -498,7 +522,7 @@
                 function(erro) {
                     console.error("Erro no watchPosition:", erro.message);
                 },
-                gpsConfig
+                gpsConfigForte
             );
         }
 
@@ -519,12 +543,13 @@
             var distanciaKmFinal = (distanciaTotalMeters / 1000).toFixed(2);
             var dataAtual = new Date().toLocaleDateString('pt-BR') + ' ' + new Date().toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit'});
 
-            // Salvar no localStorage
+            // Salva no localStorage incluindo os pontos (coordenadas) do trajeto
             var historico = JSON.parse(localStorage.getItem('percursos_moto') || '[]');
             historico.unshift({
                 data: dataAtual,
                 distancia: distanciaKmFinal + " km",
-                tempo: diffMinutos + " min"
+                tempo: diffMinutos + " min",
+                pontos: pontosTrajeto
             });
             localStorage.setItem('percursos_moto', JSON.stringify(historico));
 
@@ -554,23 +579,59 @@
                 historico.forEach(function(item, index) {
                     var div = document.createElement('div');
                     div.className = 'history-item';
-                    div.innerHTML = `<span>#${index+1} - ${item.data}</span><br>` +
-                                    `Distancia: <b>${item.distancia}</b> | Tempo: <b>${item.tempo}</b>`;
+                    
+                    var infoDiv = document.createElement('div');
+                    infoDiv.className = 'history-info';
+                    infoDiv.innerHTML = `<span>#${index+1} - ${item.data}</span><br>` +
+                                        `Distancia: <b>${item.distancia}</b> | Tempo: <b>${item.tempo}</b>`;
+                    
+                    // Ao clicar na linha do histórico, desenha a rota no mapa e fecha o modal
+                    infoDiv.onclick = function() {
+                        carregarRotaNoMapa(item.pontos);
+                    };
+
+                    var btnExcluir = document.createElement('button');
+                    btnExcluir.className = 'btn-excluir-item';
+                    btnExcluir.innerText = 'Excluir';
+                    btnExcluir.onclick = function(e) {
+                        e.stopPropagation(); // Evita acionar o clique do infoDiv
+                        deletarItemHistorico(index);
+                    };
+
+                    div.appendChild(infoDiv);
+                    div.appendChild(btnExcluir);
                     container.appendChild(div);
                 });
             }
             document.getElementById('modal-historico').style.display = 'flex';
         }
 
-        function fecharHistorico() {
-            document.getElementById('modal-historico').style.display = 'none';
+        function carregarRotaNoMapa(pontos) {
+            if (!pontos || pontos.length === 0) {
+                alert("Este percurso antigo nao possui coordenadas salvas.");
+                return;
+            }
+
+            fecharHistorico();
+
+            if (polylineRota) map.removeLayer(polylineRota);
+
+            polylineRota = L.polyline(pontos, { color: '#ff00ff', weight: 6 }).addTo(map);
+            map.fitBounds(polylineRota.getBounds());
+            document.getElementById('status-painel').innerText = "Exibindo Rota";
         }
 
-        function limparHistorico() {
-            if (confirm("Deseja realmente apagar todo o historico?")) {
-                localStorage.removeItem('percursos_moto');
-                abrirHistorico();
+        function deletarItemHistorico(index) {
+            if (confirm("Deseja apagar este percurso do historico?")) {
+                var historico = JSON.parse(localStorage.getItem('percursos_moto') || '[]');
+                historico.splice(index, 1);
+                localStorage.setItem('percursos_moto', JSON.stringify(historico));
+                abrirHistorico(); // Atualiza a lista na tela
             }
+        }
+
+        function fecharHistorico() {
+            document.getElementById('modal-historico').style.display = 'none';
         }
     </script>
 </body>
