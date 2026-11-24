@@ -2,257 +2,382 @@
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <meta name="theme-color" content="#007bff">
     <title>Percurso Moto GPS</title>
-    
+
     <link rel="manifest" href="manifest.json">
     <link rel="icon" type="image/png" href="icon-192.png">
     <link rel="apple-touch-icon" href="icon-192.png">
 
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
-        body { margin: 0; padding: 0; font-family: Arial, sans-serif; overflow: hidden; }
-        #map { height: 100vh; width: 100vw; position: absolute; top: 0; left: 0; z-index: 1; background-color: #e5e3df; }
-        
-        #btn-toggle-panel {
-            position: absolute;
-            top: 12px;
-            left: 12px;
-            background: #007bff;
-            color: white;
-            border: none;
-            padding: 8px 12px;
-            border-radius: 6px;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.3);
-            z-index: 2000;
-            font-weight: bold;
-            font-size: 13px;
-            cursor: pointer;
-            width: auto;
+        :root {
+            --azul: #007bff;
+            --verde: #28a745;
+            --vermelho: #dc3545;
+            --amarelo: #ffc107;
+            --roxo: #6c75d7;
+            --cinza-escuro: #343a40;
+            --bg-painel: #ffffff;
+            --texto: #222;
+            --texto-suave: #666;
+            --borda: #ddd;
         }
 
-        #btn-estilo-mapa {
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg-painel: #1e1e1e;
+                --texto: #f1f1f1;
+                --texto-suave: #aaa;
+                --borda: #444;
+            }
+            body { background: #121212; }
+            #control-panel { background: var(--bg-painel); color: var(--texto); }
+            .input-group input { background: #2a2a2a; color: var(--texto); border-color: var(--borda); }
+            .suggestions-list { background: #2a2a2a; border-color: var(--borda); }
+            .suggestion-item { background: #2a2a2a; color: var(--texto); border-bottom-color: var(--borda); }
+            .suggestion-item:hover { background: #333; }
+            #info-panel { background: rgba(30,30,30,0.96); color: var(--texto); }
+            .stat-value { color: var(--texto); }
+            .stat-label { color: var(--texto-suave); }
+            .history-item { background: #2a2a2a; border-color: var(--borda); color: var(--texto); }
+            .modal-content { background: #1e1e1e; color: var(--texto); }
+        }
+
+        * { -webkit-tap-highlight-color: transparent; }
+
+        body {
+            margin: 0; padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+            overflow: hidden;
+        }
+
+        #map {
+            height: 100vh; height: 100dvh;
+            width: 100vw;
+            position: absolute; top: 0; left: 0;
+            z-index: 1;
+            background-color: #e5e3df;
+        }
+
+        .btn-flutuante {
             position: absolute;
-            top: 12px;
-            right: 12px;
-            background: #343a40;
+            top: calc(12px + env(safe-area-inset-top));
+            background: var(--azul);
             color: white;
             border: none;
-            padding: 8px 12px;
-            border-radius: 6px;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+            padding: 10px 14px;
+            border-radius: 8px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.3);
             z-index: 2000;
             font-weight: bold;
-            font-size: 13px;
+            font-size: 14px;
             cursor: pointer;
-            width: auto;
+            min-height: 44px;
+            display: flex; align-items: center; gap: 6px;
+        }
+        #btn-toggle-panel { left: 12px; }
+        #btn-estilo-mapa { right: 12px; background: var(--cinza-escuro); }
+        .btn-flutuante:active { transform: scale(0.97); }
+
+        #btn-recentralizar {
+            position: absolute;
+            right: 12px;
+            bottom: calc(110px + env(safe-area-inset-bottom));
+            width: 48px; height: 48px;
+            border-radius: 50%;
+            background: white;
+            color: var(--azul);
+            border: none;
+            box-shadow: 0 3px 10px rgba(0,0,0,0.3);
+            z-index: 2000;
+            font-size: 22px;
+            cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+        }
+        #btn-recentralizar:active { transform: scale(0.95); }
+
+        #indicador-gravando {
+            position: absolute;
+            top: calc(12px + env(safe-area-inset-top));
+            left: 50%;
+            transform: translateX(-50%);
+            background: var(--vermelho);
+            color: white;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: bold;
+            z-index: 2500;
+            display: none;
+            align-items: center;
+            gap: 8px;
+            box-shadow: 0 2px 8px rgba(220,53,69,0.5);
+        }
+        #indicador-gravando.ativo { display: flex; }
+        #indicador-gravando .ponto {
+            width: 10px; height: 10px;
+            background: white;
+            border-radius: 50%;
+            animation: pulsar 1s infinite;
+        }
+        @keyframes pulsar {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.4; transform: scale(0.7); }
         }
 
         #control-panel {
             position: absolute;
-            top: 55px;
+            top: calc(64px + env(safe-area-inset-top));
             left: 12px;
-            background: white;
+            background: var(--bg-painel);
+            color: var(--texto);
             padding: 15px;
-            border-radius: 8px;
-            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+            border-radius: 10px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
             z-index: 1000;
-            width: 280px;
-            max-height: 75vh;
+            width: 290px;
+            max-height: calc(100vh - 200px);
+            max-height: calc(100dvh - 200px);
             overflow-y: auto;
             display: none;
         }
-        .input-group {
-            margin-bottom: 12px;
-            position: relative;
-        }
+        #control-panel.aberto { display: block; }
+
+        .input-group { margin-bottom: 12px; position: relative; }
         .input-group label {
-            display: block;
-            font-size: 12px;
-            font-weight: bold;
-            margin-bottom: 3px;
-            color: #333;
+            display: block; font-size: 13px; font-weight: bold;
+            margin-bottom: 4px; color: var(--texto);
         }
         .input-group input {
-            width: 100%;
-            padding: 8px;
-            box-sizing: border-box;
-            border: 1px solid #ccc;
-            border-radius: 4px;
-            font-size: 13px;
+            width: 100%; padding: 10px; box-sizing: border-box;
+            border: 1px solid var(--borda); border-radius: 6px;
+            font-size: 14px;
         }
         .suggestions-list {
-            position: absolute;
-            top: 100%;
-            left: 0;
-            right: 0;
-            background: white;
-            border: 1px solid #ccc;
-            border-top: none;
-            max-height: 150px;
-            overflow-y: auto;
-            z-index: 3000;
-            border-radius: 0 0 4px 4px;
+            position: absolute; top: 100%; left: 0; right: 0;
+            background: var(--bg-painel);
+            border: 1px solid var(--borda); border-top: none;
+            max-height: 160px; overflow-y: auto;
+            z-index: 3000; border-radius: 0 0 6px 6px;
             box-shadow: 0 4px 6px rgba(0,0,0,0.1);
         }
         .suggestion-item {
-            padding: 8px 10px;
-            font-size: 12px;
-            cursor: pointer;
-            border-bottom: 1px solid #eee;
-            color: #333;
-            background-color: #fff;
+            padding: 10px; font-size: 13px; cursor: pointer;
+            border-bottom: 1px solid var(--borda); color: var(--texto);
         }
-        .suggestion-item:hover { background-color: #f1f1f1; }
-        
-        button {
-            background-color: #007bff;
-            color: white;
-            border: none;
-            padding: 9px;
-            border-radius: 4px;
-            cursor: pointer;
-            width: 100%;
-            font-weight: bold;
-            font-size: 13px;
-            margin-top: 5px;
+        .suggestion-item:hover { background: rgba(0,123,255,0.1); }
+
+        button.btn-acao {
+            width: 100%; padding: 11px;
+            border: none; border-radius: 6px;
+            font-weight: bold; font-size: 14px;
+            cursor: pointer; color: white;
+            margin-top: 6px;
+            min-height: 44px;
         }
-        button:hover { background-color: #0056b3; }
-        .btn-gps { background-color: #28a745; margin-bottom: 10px; }
-        .btn-gps:hover { background-color: #218838; }
-        .btn-gravar { background-color: #ffc107; color: #333; margin-top: 15px; }
-        .btn-gravar:hover { background-color: #e0a800; }
-        .btn-parar { background-color: #dc3545; margin-top: 5px; color: white; }
-        .btn-parar:hover { background-color: #c82333; }
-        .btn-historico { background-color: #6c75d7; margin-top: 10px; }
-        .btn-historico:hover { background-color: #5a62c4; }
+        button.btn-acao:active { transform: scale(0.98); }
+        .btn-gps { background: var(--verde); }
+        .btn-rota { background: var(--azul); }
+        .btn-gravar { background: var(--amarelo); color: #333; }
+        .btn-parar { background: var(--vermelho); }
+        .btn-historico { background: var(--roxo); }
 
         #info-panel {
             position: absolute;
-            bottom: 20px;
-            left: 10px;
-            right: 10px;
-            background: rgba(255, 255, 255, 0.96);
-            padding: 8px 4px;
-            border-radius: 10px;
+            bottom: calc(10px + env(safe-area-inset-bottom));
+            left: 8px; right: 8px;
+            background: rgba(255,255,255,0.97);
+            padding: 10px 4px;
+            border-radius: 12px;
             box-shadow: 0 4px 15px rgba(0,0,0,0.25);
             z-index: 1000;
             display: flex;
             justify-content: space-around;
             align-items: center;
             text-align: center;
-            border-left: 5px solid #007bff;
+            border-left: 5px solid var(--azul);
         }
-        .stat-box {
-            flex: 1;
-            padding: 0 1px;
-        }
-        .stat-box:not(:last-child) {
-            border-right: 1px solid #ddd;
-        }
+        .stat-box { flex: 1; padding: 0 2px; }
+        .stat-box:not(:last-child) { border-right: 1px solid var(--borda); }
         .stat-label {
-            font-size: 9px;
-            color: #666;
-            text-transform: uppercase;
-            font-weight: bold;
-            margin-bottom: 2px;
+            font-size: 10px; color: var(--texto-suave);
+            text-transform: uppercase; font-weight: bold; margin-bottom: 3px;
         }
         .stat-value {
-            font-size: 11px;
-            color: #222;
-            font-weight: bold;
+            font-size: 13px; color: var(--texto); font-weight: bold;
         }
 
-        #modal-resumo, #modal-historico {
-            display: none;
+        #toast-container {
             position: fixed;
-            top: 0; left: 0; width: 100vw; height: 100vh;
-            background: rgba(0,0,0,0.5);
+            top: calc(70px + env(safe-area-inset-top));
+            left: 50%; transform: translateX(-50%);
+            z-index: 5000;
+            display: flex; flex-direction: column; gap: 8px;
+            pointer-events: none;
+        }
+        .toast {
+            background: rgba(0,0,0,0.85);
+            color: white;
+            padding: 10px 18px;
+            border-radius: 8px;
+            font-size: 13px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            animation: entrar 0.3s ease-out;
+            max-width: 85vw;
+        }
+        .toast.erro { background: rgba(220,53,69,0.95); }
+        .toast.sucesso { background: rgba(40,167,69,0.95); }
+        @keyframes entrar {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        #modal-resumo, #modal-historico, #modal-confirmar {
+            display: none;
+            position: fixed; inset: 0;
+            background: rgba(0,0,0,0.55);
             z-index: 4000;
-            justify-content: center;
-            align-items: center;
+            justify-content: center; align-items: center;
+            padding: 16px;
         }
         .modal-content {
-            background: white;
-            padding: 20px;
-            border-radius: 12px;
-            width: 320px;
-            max-height: 80vh;
-            overflow-y: auto;
+            background: var(--bg-painel); color: var(--texto);
+            padding: 22px; border-radius: 14px;
+            width: 360px; max-width: 100%;
+            max-height: 80vh; overflow-y: auto;
             text-align: center;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+            box-shadow: 0 6px 24px rgba(0,0,0,0.35);
+            position: relative;
         }
-        .modal-content h3 { margin-top: 0; color: #28a745; font-size: 18px; }
-        .modal-content p { font-size: 14px; color: #333; margin: 10px 0; }
-        .modal-content button { background-color: #007bff; margin-top: 15px; padding: 10px; font-size: 13px; }
-        
-        .history-item {
-            background: #f8f9fa;
-            border: 1px solid #ddd;
-            padding: 10px;
-            border-radius: 6px;
-            margin-bottom: 8px;
-            text-align: left;
-            font-size: 12px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
+        .modal-content h3 { margin-top: 0; color: var(--verde); font-size: 19px; }
+        .modal-content p { font-size: 15px; margin: 10px 0; }
+        .modal-content button {
+            background: var(--azul); color: white;
+            border: none; padding: 12px;
+            border-radius: 8px; font-size: 15px;
+            font-weight: bold; cursor: pointer;
+            width: 100%; margin-top: 12px; min-height: 44px;
         }
-        .history-info {
-            cursor: pointer;
-            flex-grow: 1;
+        .modal-content button.btn-secundario {
+            background: transparent; color: var(--texto-suave);
+            border: 1px solid var(--borda);
         }
-        .history-info span { font-weight: bold; color: #007bff; }
-        .btn-excluir-item {
-            background-color: #dc3545;
-            color: white;
+
+        /* Botão fechar (X) no canto do modal */
+        .btn-fechar-modal {
+            position: absolute;
+            top: 10px; right: 10px;
+            width: 36px; height: 36px;
+            border-radius: 50%;
+            background: transparent;
             border: none;
-            padding: 5px 8px;
-            border-radius: 4px;
-            font-size: 11px;
+            color: var(--texto-suave);
+            font-size: 22px;
             cursor: pointer;
-            width: auto;
-            margin-top: 0;
+            display: flex; align-items: center; justify-content: center;
+            margin: 0 !important;
+            padding: 0 !important;
+            min-height: 36px !important;
         }
-        .btn-excluir-item:hover { background-color: #c82333; }
+        .btn-fechar-modal:hover { background: rgba(0,0,0,0.08); }
+
+        .resumo-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin: 14px 0;
+        }
+        .resumo-item {
+            background: rgba(0,123,255,0.08);
+            border-radius: 8px;
+            padding: 10px 6px;
+        }
+        .resumo-item .label {
+            font-size: 11px;
+            color: var(--texto-suave);
+            text-transform: uppercase;
+            font-weight: bold;
+            margin-bottom: 4px;
+        }
+        .resumo-item .valor {
+            font-size: 16px;
+            font-weight: bold;
+            color: var(--texto);
+        }
+        .resumo-item .valor.destaque { color: var(--azul); }
+        .resumo-item .valor.verde { color: var(--verde); }
+        .resumo-item .valor.vermelho { color: var(--vermelho); }
+
+        .history-item {
+            background: rgba(0,123,255,0.06);
+            border: 1px solid var(--borda);
+            padding: 10px; border-radius: 8px;
+            margin-bottom: 8px;
+            text-align: left; font-size: 13px;
+            display: flex; justify-content: space-between; align-items: center;
+            gap: 8px;
+        }
+        .history-info { cursor: pointer; flex-grow: 1; }
+        .history-info span { font-weight: bold; color: var(--azul); }
+        .history-info .extra {
+            font-size: 11px;
+            color: var(--texto-suave);
+            margin-top: 3px;
+        }
+        .btn-excluir-item {
+            background: var(--vermelho); color: white;
+            border: none; padding: 8px 10px;
+            border-radius: 6px; font-size: 12px;
+            cursor: pointer; width: auto; margin: 0;
+            min-height: 36px;
+        }
     </style>
 </head>
 <body>
 
     <div id="map"></div>
 
-    <button id="btn-toggle-panel" onclick="alternarPainel()">Menu</button>
-    <button id="btn-estilo-mapa" onclick="alternarEstiloMapa()">🛰️ Satélite</button>
+    <button id="btn-toggle-panel" class="btn-flutuante" onclick="alternarPainel()">☰ Menu</button>
+    <button id="btn-estilo-mapa" class="btn-flutuante" onclick="alternarEstiloMapa()">🛰️ Satélite</button>
+
+    <div id="indicador-gravando">
+        <div class="ponto"></div>
+        GRAVANDO
+    </div>
+
+    <button id="btn-recentralizar" onclick="recentralizarGPS()" title="Centralizar no GPS">📍</button>
 
     <div id="control-panel">
-        <h3 style="margin-top: 0; font-size: 14px; color: #333;">Planejador de Rota</h3>
-        
+        <h3 style="margin: 0 0 10px; font-size: 15px; color: var(--texto);">Planejador de Rota</h3>
+
         <div class="input-group">
-            <label for="origem">Endereco de Origem:</label>
-            <input type="text" id="origem" placeholder="Digite a origem..." oninput="buscarSugestoes(this.value, 'sugestoes-origem', 'origem')">
+            <label for="origem">Endereço de Origem:</label>
+            <input type="text" id="origem" placeholder="Digite a origem..." autocomplete="off"
+                   oninput="buscarSugestoes(this.value, 'sugestoes-origem', 'origem')">
             <div id="sugestoes-origem" class="suggestions-list"></div>
         </div>
 
-        <button class="btn-gps" onclick="usarMinhaLocalizacao()">Usar Minha Localizacao (GPS)</button>
-        
-        <div class="input-group">
-            <label for="destino">Endereco de Destino:</label>
-            <input type="text" id="destino" placeholder="Digite o destino..." oninput="buscarSugestoes(this.value, 'sugestoes-destino', 'destino')">
+        <button class="btn-acao btn-gps" onclick="usarMinhaLocalizacao()">📍 Usar Minha Localização (GPS)</button>
+
+        <div class="input-group" style="margin-top: 12px;">
+            <label for="destino">Endereço de Destino:</label>
+            <input type="text" id="destino" placeholder="Digite o destino..." autocomplete="off"
+                   oninput="buscarSugestoes(this.value, 'sugestoes-destino', 'destino')">
             <div id="sugestoes-destino" class="suggestions-list"></div>
         </div>
 
-        <button onclick="tracarRotaFinal()">Tracar Rota Teorica</button>
+        <button class="btn-acao btn-rota" onclick="tracarRotaFinal()">🗺️ Traçar Rota Teórica</button>
 
-        <hr style="margin: 12px 0; border: 0; border-top: 1px solid #ddd;">
+        <hr style="margin: 14px 0; border: 0; border-top: 1px solid var(--borda);">
 
-        <h3 style="margin-top: 0; font-size: 14px; color: #333;">Gravador de Percurso (Moto)</h3>
-        <button id="btn-iniciar" class="btn-gravar" onclick="iniciarGravacao()">Iniciar Gravacao GPS</button>
-        <button id="btn-parar" class="btn-parar" onclick="pararGravacao()" style="display:none;">Parar e Salvar Trajeto</button>
-        <button class="btn-historico" onclick="abrirHistorico()">Ver Historico de Percursos</button>
+        <h3 style="margin: 0 0 10px; font-size: 15px; color: var(--texto);">Gravador de Percurso</h3>
+        <button id="btn-iniciar" class="btn-acao btn-gravar" onclick="iniciarGravacao()">▶️ Iniciar Gravação GPS</button>
+        <button id="btn-parar" class="btn-acao btn-parar" onclick="confirmarPararGravacao()" style="display:none;">⏹️ Parar e Salvar Trajeto</button>
+        <button class="btn-acao btn-historico" onclick="abrirHistorico()">📋 Ver Histórico de Percursos</button>
     </div>
 
-    <!-- Barra de Status com Altitudes e Elevação -->
     <div id="info-panel">
         <div class="stat-box">
             <div class="stat-label">Dist</div>
@@ -276,41 +401,78 @@
         </div>
     </div>
 
-    <!-- Modal Conclusao -->
+    <div id="toast-container"></div>
+
+    <!-- Modal Resumo (agora com velocidade média e máxima) -->
     <div id="modal-resumo">
         <div class="modal-content">
-            <h3>Percurso Concluido!</h3>
-            <p><strong>Distancia:</strong> <span id="modal-distancia" style="color: #007bff; font-weight: bold;">0.0 km</span></p>
-            <p><strong>Tempo:</strong> <span id="modal-tempo" style="font-weight: bold;">0 min</span></p>
-            <p><strong>Ganho de Elevação:</strong> <span id="modal-ganho" style="color: #28a745; font-weight: bold;">0 m</span></p>
+            <button class="btn-fechar-modal" onclick="fecharModal()" title="Fechar">✕</button>
+            <h3>✅ Percurso Concluído!</h3>
+
+            <div class="resumo-grid">
+                <div class="resumo-item">
+                    <div class="label">Distância</div>
+                    <div id="modal-distancia" class="valor destaque">0.0 km</div>
+                </div>
+                <div class="resumo-item">
+                    <div class="label">Tempo</div>
+                    <div id="modal-tempo" class="valor">0 min</div>
+                </div>
+                <div class="resumo-item">
+                    <div class="label">Ganho Elev.</div>
+                    <div id="modal-ganho" class="valor verde">0 m</div>
+                </div>
+                <div class="resumo-item">
+                    <div class="label">Vel. Média</div>
+                    <div id="modal-vel-media" class="valor destaque">0 km/h</div>
+                </div>
+                <div class="resumo-item" style="grid-column: span 2;">
+                    <div class="label">Velocidade Máxima</div>
+                    <div id="modal-vel-max" class="valor vermelho">0 km/h</div>
+                </div>
+            </div>
+
             <button onclick="fecharModal()">OK / Fechar</button>
         </div>
     </div>
 
-    <!-- Modal Historico -->
+    <!-- Modal Histórico -->
     <div id="modal-historico">
-        <div class="modal-content" style="width: 340px;">
-            <h3 style="color: #007bff;">Historico de Percursos</h3>
-            <div id="lista-historico" style="max-height: 250px; overflow-y: auto; margin-top: 10px; text-align: left;">
-                <!-- Itens injetados via JS -->
+        <div class="modal-content" style="width: 380px;">
+            <button class="btn-fechar-modal" onclick="fecharHistorico()" title="Fechar">✕</button>
+            <h3 style="color: var(--azul);">📋 Histórico de Percursos</h3>
+            <div id="lista-historico" style="max-height: 300px; overflow-y: auto; margin-top: 10px; text-align: left;">
+                <!-- Injetado via JS -->
             </div>
             <button onclick="fecharHistorico()" style="margin-top: 15px;">Fechar</button>
         </div>
     </div>
 
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <!-- Modal Confirmar -->
+    <div id="modal-confirmar">
+        <div class="modal-content">
+            <button class="btn-fechar-modal" onclick="fecharConfirmar()" title="Fechar">✕</button>
+            <h3 style="color: var(--vermelho);">⏹️ Parar Gravação?</h3>
+            <p>Deseja realmente encerrar e salvar o percurso atual?</p>
+            <button onclick="pararGravacao()">Sim, parar e salvar</button>
+            <button class="btn-secundario" onclick="fecharConfirmar()">Cancelar</button>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" defer></script>
     <script>
+        // ========== ESTADO GLOBAL ==========
         var map, markerOrigem, markerDestino, polylineRota;
         var tileLayerAtual = null;
         var tipoEstiloMapa = 'ruas';
-        
+
         var coordOrigemSelecionada = null;
         var coordDestinoSelecionada = null;
         var watchId = null;
-        var gpsPollingInterval = null;
+        var fallbackInterval = null;
+        var ultimoPontoTimestamp = 0;
         var wakeLock = null;
-        
-        // Elementos para o motor de áudio silencioso (Mantém o app ativo no Android em segundo plano)
+
         var audioContext = null;
         var audioSource = null;
 
@@ -318,11 +480,82 @@
         var distanciaTotalMeters = 0;
         var tempoInicioViagem = null;
         var timerInterval = null;
-        var timeoutId = null;
-        
+        var timeoutIdBusca = null;
+
         var altitudeAnterior = null;
         var ganhoElevacaoTotal = 0;
 
+        // NOVO: acumuladores para velocidade média e máxima
+        var somaVelocidades = 0;
+        var contadorVelocidades = 0;
+        var velocidadeMaxima = 0;
+
+        var usuarioMoveuMapa = false;
+        var ultimaCentralizacao = 0;
+        var salvamentoParcialCounter = 0;
+
+        var CHAVE_HISTORICO = 'percursos_moto';
+        var CHAVE_PARCIAL = 'percurso_em_andamento';
+
+        // ========== UTILITÁRIOS ==========
+        function toast(mensagem, tipo) {
+            var container = document.getElementById('toast-container');
+            var div = document.createElement('div');
+            div.className = 'toast' + (tipo ? ' ' + tipo : '');
+            div.innerText = mensagem;
+            container.appendChild(div);
+            setTimeout(function() {
+                div.style.opacity = '0';
+                div.style.transition = 'opacity 0.3s';
+                setTimeout(function() { div.remove(); }, 300);
+            }, 3000);
+        }
+
+        function ehMobile() {
+            return window.matchMedia('(max-width: 768px)').matches;
+        }
+
+        // ========== MODAIS: fechar ao clicar fora / ESC / botão voltar ==========
+        function configurarFechamentoModais() {
+            var modais = [
+                { id: 'modal-resumo', fechar: fecharModal },
+                { id: 'modal-historico', fechar: fecharHistorico },
+                { id: 'modal-confirmar', fechar: fecharConfirmar }
+            ];
+
+            modais.forEach(function(m) {
+                var el = document.getElementById(m.id);
+                // Clique fora do conteúdo fecha
+                el.addEventListener('click', function(e) {
+                    if (e.target === el) m.fechar();
+                });
+            });
+
+            // Tecla ESC fecha qualquer modal aberto
+            document.addEventListener('keydown', function(e) {
+                if (e.key === 'Escape') {
+                    fecharModal();
+                    fecharHistorico();
+                    fecharConfirmar();
+                }
+            });
+
+            // Botão voltar do Android: se algum modal está aberto, fecha
+            history.pushState({ modalAberto: false }, '');
+            window.addEventListener('popstate', function() {
+                var algumAberto = ['modal-resumo', 'modal-historico', 'modal-confirmar'].some(function(id) {
+                    return document.getElementById(id).style.display === 'flex';
+                });
+                if (algumAberto) {
+                    fecharModal();
+                    fecharHistorico();
+                    fecharConfirmar();
+                }
+                history.pushState({ modalAberto: false }, '');
+            });
+        }
+
+        // ========== INICIALIZAÇÃO ==========
         window.onload = function() {
             try {
                 map = L.map('map', { zoomControl: false }).setView([-18.9186, -48.2772], 13);
@@ -330,47 +563,70 @@
 
                 definirCamadaMapa('ruas');
                 usarMinhaLocalizacao();
+
+                if (!ehMobile()) {
+                    document.getElementById('control-panel').classList.add('aberto');
+                }
+
+                map.on('dragstart', function() { usuarioMoveuMapa = true; });
+
+                configurarFechamentoModais();
+                verificarPercursoInterrompido();
+
             } catch (err) {
                 console.error(err);
+                toast('Erro ao inicializar o mapa', 'erro');
             }
         };
 
-        // Motor de Áudio Silencioso para enganar o gerenciador de bateria da Samsung/Android
+        function verificarPercursoInterrompido() {
+            var salvo = localStorage.getItem(CHAVE_PARCIAL);
+            if (!salvo) return;
+            try {
+                var dados = JSON.parse(salvo);
+                if (dados.pontos && dados.pontos.length > 5) {
+                    if (confirm('Encontramos um percurso interrompido. Deseja recuperá-lo?')) {
+                        pontosTrajeto = dados.pontos;
+                        distanciaTotalMeters = dados.distancia || 0;
+                        ganhoElevacaoTotal = dados.ganho || 0;
+
+                        polylineRota = L.polyline(pontosTrajeto, { color: '#ff00ff', weight: 6 }).addTo(map);
+                        map.fitBounds(polylineRota.getBounds());
+
+                        document.getElementById('distancia').innerText = (distanciaTotalMeters / 1000).toFixed(2) + " km";
+                        document.getElementById('ganho-elevacao').innerText = ganhoElevacaoTotal + " m";
+
+                        toast('Percurso recuperado! Você pode continuar gravando.', 'sucesso');
+                    } else {
+                        localStorage.removeItem(CHAVE_PARCIAL);
+                    }
+                }
+            } catch (e) {
+                localStorage.removeItem(CHAVE_PARCIAL);
+            }
+        }
+
+        // ========== ÁUDIO SILENCIOSO ==========
         function iniciarAudioSilencioso() {
             try {
                 window.AudioContext = window.AudioContext || window.webkitAudioContext;
                 audioContext = new AudioContext();
-                
-                // Cria um buffer de áudio em branco de 1 segundo
                 var buffer = audioContext.createBuffer(1, audioContext.sampleRate, audioContext.sampleRate);
                 audioSource = audioContext.createBufferSource();
                 audioSource.buffer = buffer;
                 audioSource.loop = true;
-                
-                // Conecta e toca silenciosamente
                 audioSource.connect(audioContext.destination);
                 audioSource.start(0);
-                console.log('Áudio silencioso em loop ativado.');
             } catch (e) {
-                console.warn('Erro ao iniciar áudio silencioso:', e);
+                console.warn('Áudio silencioso indisponível:', e);
             }
         }
 
         function pararAudioSilencioso() {
             try {
-                if (audioSource) {
-                    audioSource.stop();
-                    audioSource.disconnect();
-                    audioSource = null;
-                }
-                if (audioContext && audioContext.state !== 'closed') {
-                    audioContext.close();
-                    audioContext = null;
-                }
-                console.log('Áudio silencioso desativado.');
-            } catch (e) {
-                console.warn('Erro ao parar áudio:', e);
-            }
+                if (audioSource) { audioSource.stop(); audioSource.disconnect(); audioSource = null; }
+                if (audioContext && audioContext.state !== 'closed') { audioContext.close(); audioContext = null; }
+            } catch (e) { console.warn(e); }
         }
 
         async function ativarWakeLock() {
@@ -379,15 +635,13 @@
                     wakeLock = await navigator.wakeLock.request('screen');
                 }
             } catch (err) {
-                console.warn('Wake Lock nao disponivel:', err.message);
+                console.warn('Wake Lock indisponível:', err.message);
             }
         }
 
         function liberarWakeLock() {
             if (wakeLock !== null) {
-                wakeLock.release().then(function() {
-                    wakeLock = null;
-                }).catch(function(err) {});
+                wakeLock.release().then(function() { wakeLock = null; }).catch(function() {});
             }
         }
 
@@ -397,54 +651,55 @@
             }
         });
 
+        // ========== MAPA ==========
         function definirCamadaMapa(estilo) {
-            if (tileLayerAtual) {
-                map.removeLayer(tileLayerAtual);
-            }
+            if (tileLayerAtual) map.removeLayer(tileLayerAtual);
 
             if (estilo === 'ruas') {
                 tileLayerAtual = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
-                    maxZoom: 19,
-                    attribution: 'Tiles &copy; Esri'
+                    maxZoom: 19, attribution: 'Tiles &copy; Esri'
                 });
                 tipoEstiloMapa = 'ruas';
-                document.getElementById('btn-estilo-mapa').innerText = "🛰️ Satélite";
+                document.getElementById('btn-estilo-mapa').innerHTML = '🛰️ Satélite';
             } else {
                 tileLayerAtual = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-                    maxZoom: 19,
-                    attribution: 'Tiles &copy; Esri'
+                    maxZoom: 19, attribution: 'Tiles &copy; Esri'
                 });
                 tipoEstiloMapa = 'satelite';
-                document.getElementById('btn-estilo-mapa').innerText = "🗺️ Ruas";
+                document.getElementById('btn-estilo-mapa').innerHTML = '🗺️ Ruas';
             }
             tileLayerAtual.addTo(map);
         }
 
         function alternarEstiloMapa() {
-            if (tipoEstiloMapa === 'ruas') {
-                definirCamadaMapa('satelite');
-            } else {
-                definirCamadaMapa('ruas');
-            }
+            definirCamadaMapa(tipoEstiloMapa === 'ruas' ? 'satelite' : 'ruas');
         }
 
         function alternarPainel() {
-            var panel = document.getElementById('control-panel');
-            panel.style.display = (panel.style.display === 'block') ? 'none' : 'block';
+            document.getElementById('control-panel').classList.toggle('aberto');
         }
 
+        // ========== BUSCA ==========
         function buscarSugestoes(termo, idContainer, idInput) {
-            clearTimeout(timeoutId);
+            clearTimeout(timeoutIdBusca);
             var container = document.getElementById(idContainer);
             container.innerHTML = "";
 
             if (!termo || termo.trim().length < 3) return;
 
-            timeoutId = setTimeout(async function() {
+            timeoutIdBusca = setTimeout(async function() {
                 try {
-                    var busca = termo + ", Uberlandia, MG";
-                    var url = "https://nominatim.openstreetmap.org/search?format=json&q=" + encodeURIComponent(busca) + "&limit=5";
-                    var response = await fetch(url);
+                    var url = "https://nominatim.openstreetmap.org/search?format=json&q="
+                              + encodeURIComponent(termo) + "&limit=5";
+
+                    if (coordOrigemSelecionada) {
+                        var lat = coordOrigemSelecionada[0];
+                        var lon = coordOrigemSelecionada[1];
+                        var delta = 0.5;
+                        url += "&viewbox=" + (lon - delta) + "," + (lat + delta) + "," + (lon + delta) + "," + (lat - delta);
+                    }
+
+                    var response = await fetch(url, { headers: { 'Accept-Language': 'pt-BR' } });
                     var data = await response.json();
 
                     container.innerHTML = "";
@@ -453,38 +708,44 @@
                             var div = document.createElement('div');
                             div.className = 'suggestion-item';
                             div.innerText = local.display_name;
-                            
                             div.onclick = function() {
                                 document.getElementById(idInput).value = local.display_name;
                                 var latLng = [parseFloat(local.lat), parseFloat(local.lon)];
-                                
-                                if (idInput === 'origem') {
-                                    coordOrigemSelecionada = latLng;
-                                } else {
-                                    coordDestinoSelecionada = latLng;
-                                }
+                                if (idInput === 'origem') coordOrigemSelecionada = latLng;
+                                else coordDestinoSelecionada = latLng;
                                 container.innerHTML = "";
                             };
                             container.appendChild(div);
                         });
+                    } else {
+                        var div = document.createElement('div');
+                        div.className = 'suggestion-item';
+                        div.style.color = '#999';
+                        div.innerText = 'Nenhum resultado encontrado';
+                        container.appendChild(div);
                     }
                 } catch (e) {
                     console.error("Erro na busca:", e);
+                    toast('Erro ao buscar endereço', 'erro');
                 }
-            }, 350);
+            }, 400);
         }
 
         document.addEventListener('click', function(e) {
-            if (!e.target.closest('.input-group') && !e.target.closest('#control-panel') && !e.target.closest('#btn-toggle-panel') && !e.target.closest('#btn-estilo-mapa')) {
+            if (!e.target.closest('.input-group') &&
+                !e.target.closest('#control-panel') &&
+                !e.target.closest('#btn-toggle-panel') &&
+                !e.target.closest('#btn-estilo-mapa')) {
                 document.querySelectorAll('.suggestions-list').forEach(function(el) { el.innerHTML = ''; });
             }
         });
 
+        // ========== GPS ==========
         var gpsConfig = { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 };
 
         function usarMinhaLocalizacao() {
             if (!navigator.geolocation) {
-                alert("Navegador sem suporte a GPS.");
+                toast('Navegador sem suporte a GPS', 'erro');
                 return;
             }
 
@@ -495,33 +756,43 @@
                     var lat = posicao.coords.latitude;
                     var lng = posicao.coords.longitude;
                     var alt = posicao.coords.altitude ? Math.round(posicao.coords.altitude) : 0;
-                    
+
                     coordOrigemSelecionada = [lat, lng];
-                    document.getElementById('origem').value = "Minha Localizacao Atual (GPS)";
+                    document.getElementById('origem').value = "Minha Localização Atual (GPS)";
                     document.getElementById('altitude').innerText = alt + " m";
 
-                    if (markerOrigem) {
-                        markerOrigem.setLatLng(coordOrigemSelecionada);
-                    } else {
-                        markerOrigem = L.marker(coordOrigemSelecionada).addTo(map);
-                    }
-                    markerOrigem.bindPopup("<b>Voce esta aqui (GPS Real)</b>").openPopup();
+                    if (markerOrigem) markerOrigem.setLatLng(coordOrigemSelecionada);
+                    else markerOrigem = L.marker(coordOrigemSelecionada).addTo(map);
+
+                    markerOrigem.bindPopup("<b>Você está aqui</b>").openPopup();
                     map.setView(coordOrigemSelecionada, 17);
+                    usuarioMoveuMapa = false;
                 },
-                function(erro) {
+                function() {
                     document.getElementById('origem').value = "";
+                    toast('Não foi possível obter sua localização', 'erro');
                 },
                 gpsConfig
             );
         }
 
+        function recentralizarGPS() {
+            if (coordOrigemSelecionada) {
+                map.setView(coordOrigemSelecionada, 17);
+                usuarioMoveuMapa = false;
+            } else {
+                usarMinhaLocalizacao();
+            }
+        }
+
+        // ========== ROTA ==========
         async function tracarRotaFinal() {
             if (!coordOrigemSelecionada || !coordDestinoSelecionada) {
-                alert("Selecione a origem e o destino na lista.");
+                toast('Selecione origem e destino na lista', 'erro');
                 return;
             }
 
-            alternarPainel();
+            if (ehMobile()) document.getElementById('control-panel').classList.remove('aberto');
 
             try {
                 if (markerOrigem) markerOrigem.setLatLng(coordOrigemSelecionada);
@@ -530,16 +801,16 @@
                 if (markerDestino) markerDestino.setLatLng(coordDestinoSelecionada);
                 else markerDestino = L.marker(coordDestinoSelecionada).addTo(map);
 
-                var urlRota = "https://router.project-osrm.org/route/v1/driving/" + 
-                              coordOrigemSelecionada[1] + "," + coordOrigemSelecionada[0] + ";" + 
-                              coordDestinoSelecionada[1] + "," + coordDestinoSelecionada[0] + 
-                              "?overview=full&geometries=geojson";
-                
+                var urlRota = "https://router.project-osrm.org/route/v1/driving/"
+                              + coordOrigemSelecionada[1] + "," + coordOrigemSelecionada[0] + ";"
+                              + coordDestinoSelecionada[1] + "," + coordDestinoSelecionada[0]
+                              + "?overview=full&geometries=geojson";
+
                 var resRota = await fetch(urlRota);
                 var dataRota = await resRota.json();
 
                 if (!dataRota.routes || dataRota.routes.length === 0) {
-                    alert("Rota nao encontrada.");
+                    toast('Rota não encontrada', 'erro');
                     return;
                 }
 
@@ -552,15 +823,17 @@
                 document.getElementById('velocidade').innerText = "--";
 
                 if (polylineRota) map.removeLayer(polylineRota);
-                var coords = route.geometry.coordinates.map(function(coord) { return [coord[1], coord[0]]; });
+                var coords = route.geometry.coordinates.map(function(c) { return [c[1], c[0]]; });
                 polylineRota = L.polyline(coords, { color: 'blue', weight: 5 }).addTo(map);
                 map.fitBounds(polylineRota.getBounds());
 
+                toast('Rota traçada com sucesso', 'sucesso');
             } catch (error) {
-                alert("Erro ao tracar rota.");
+                toast('Erro ao traçar rota', 'erro');
             }
         }
 
+        // ========== CÁLCULOS ==========
         function calcularDistanciaMetros(lat1, lon1, lat2, lon2) {
             var R = 6371e3;
             var dLat = (lat2 - lat1) * Math.PI / 180;
@@ -572,6 +845,7 @@
             return R * c;
         }
 
+        // ========== PROCESSAMENTO GPS ==========
         function processarPosicaoGPS(posicao) {
             var lat = posicao.coords.latitude;
             var lng = posicao.coords.longitude;
@@ -579,19 +853,27 @@
             var altAtual = posicao.coords.altitude ? Math.round(posicao.coords.altitude) : null;
             var novaCoord = [lat, lng];
 
-            if (precisao > 35 && pontosTrajeto.length > 0) {
-                return;
+            ultimoPontoTimestamp = Date.now();
+
+            if (precisao > 35 && pontosTrajeto.length > 0) return;
+
+            var velocidadeKmh = posicao.coords.speed ? Math.round(posicao.coords.speed * 3.6) : 0;
+
+            // Atualiza acumuladores de velocidade (ignora 0 para não baixar a média em paradas)
+            if (velocidadeKmh > 0) {
+                somaVelocidades += velocidadeKmh;
+                contadorVelocidades++;
+                if (velocidadeKmh > velocidadeMaxima) velocidadeMaxima = velocidadeKmh;
             }
-            
-            var velocidadeKmh = posicao.coords.speed ? (posicao.coords.speed * 3.6).toFixed(0) : 0;
+
             document.getElementById('velocidade').innerText = velocidadeKmh + " km/h";
 
             if (altAtual !== null) {
                 document.getElementById('altitude').innerText = altAtual + " m";
                 if (altitudeAnterior !== null) {
-                    var diferencaAlt = altAtual - altitudeAnterior;
-                    if (diferencaAlt > 1 && diferencaAlt < 20) {
-                        ganhoElevacaoTotal += diferencaAlt;
+                    var dif = altAtual - altitudeAnterior;
+                    if (dif > 1 && dif < 20) {
+                        ganhoElevacaoTotal += dif;
                         document.getElementById('ganho-elevacao').innerText = ganhoElevacaoTotal + " m";
                     }
                 }
@@ -599,35 +881,52 @@
             }
 
             if (pontosTrajeto.length > 0) {
-                var ultimoPonto = pontosTrajeto[pontosTrajeto.length - 1];
-                var distanciaTrecho = calcularDistanciaMetros(ultimoPonto[0], ultimoPonto[1], lat, lng);
-                
-                if (distanciaTrecho >= 2.5 && distanciaTrecho < 1500) {
-                    distanciaTotalMeters += distanciaTrecho;
+                var ultimo = pontosTrajeto[pontosTrajeto.length - 1];
+                var distTrecho = calcularDistanciaMetros(ultimo[0], ultimo[1], lat, lng);
+
+                if (distTrecho >= 2.5 && distTrecho < 1500) {
+                    distanciaTotalMeters += distTrecho;
                     document.getElementById('distancia').innerText = (distanciaTotalMeters / 1000).toFixed(2) + " km";
                     pontosTrajeto.push(novaCoord);
 
-                    if (polylineRota) {
-                        polylineRota.setLatLngs(pontosTrajeto);
-                    } else {
-                        polylineRota = L.polyline(pontosTrajeto, { color: '#ff00ff', weight: 6 }).addTo(map);
+                    if (polylineRota) polylineRota.addLatLng(novaCoord);
+                    else polylineRota = L.polyline(pontosTrajeto, { color: '#ff00ff', weight: 6 }).addTo(map);
+
+                    salvamentoParcialCounter++;
+                    if (salvamentoParcialCounter >= 10) {
+                        salvamentoParcialCounter = 0;
+                        salvarPercursoParcial();
                     }
                 }
             } else {
                 pontosTrajeto.push(novaCoord);
             }
 
-            if (markerOrigem) {
-                markerOrigem.setLatLng(novaCoord);
-            } else {
-                markerOrigem = L.marker(novaCoord).addTo(map).bindPopup('Moto em Movimento');
+            if (markerOrigem) markerOrigem.setLatLng(novaCoord);
+            else markerOrigem = L.marker(novaCoord).addTo(map).bindPopup('Moto em Movimento');
+
+            var agora = Date.now();
+            if (!usuarioMoveuMapa && (agora - ultimaCentralizacao) > 3000) {
+                map.setView(novaCoord, 17);
+                ultimaCentralizacao = agora;
             }
-            map.setView(novaCoord, 17);
         }
 
+        function salvarPercursoParcial() {
+            try {
+                localStorage.setItem(CHAVE_PARCIAL, JSON.stringify({
+                    pontos: pontosTrajeto,
+                    distancia: distanciaTotalMeters,
+                    ganho: ganhoElevacaoTotal,
+                    timestamp: Date.now()
+                }));
+            } catch (e) { /* silencioso */ }
+        }
+
+        // ========== GRAVAÇÃO ==========
         function iniciarGravacao() {
             if (!navigator.geolocation) {
-                alert("Navegador sem suporte a GPS.");
+                toast('Navegador sem suporte a GPS', 'erro');
                 return;
             }
 
@@ -635,130 +934,175 @@
             distanciaTotalMeters = 0;
             ganhoElevacaoTotal = 0;
             altitudeAnterior = null;
+            somaVelocidades = 0;
+            contadorVelocidades = 0;
+            velocidadeMaxima = 0;
             tempoInicioViagem = new Date();
+            salvamentoParcialCounter = 0;
 
             document.getElementById('distancia').innerText = "0.0 km";
             document.getElementById('tempo-decorrido').innerText = "0m";
             document.getElementById('ganho-elevacao').innerText = "0 m";
-            alternarPainel();
+            document.getElementById('velocidade').innerText = "0 km/h";
+
+            if (ehMobile()) document.getElementById('control-panel').classList.remove('aberto');
 
             document.getElementById('btn-iniciar').style.display = 'none';
             document.getElementById('btn-parar').style.display = 'block';
+            document.getElementById('indicador-gravando').classList.add('ativo');
 
             if (polylineRota) map.removeLayer(polylineRota);
 
-            // Ativa as blindagens de execução em segundo plano
             ativarWakeLock();
             iniciarAudioSilencioso();
 
             if (timerInterval) clearInterval(timerInterval);
             timerInterval = setInterval(function() {
-                var agora = new Date();
-                var diffSecs = Math.floor((agora - tempoInicioViagem) / 1000);
+                var diffSecs = Math.floor((new Date() - tempoInicioViagem) / 1000);
                 var mins = Math.floor(diffSecs / 60);
                 var secs = diffSecs % 60;
                 document.getElementById('tempo-decorrido').innerText = mins + "m " + secs + "s";
             }, 1000);
 
-            var gpsConfigForte = { 
-                enableHighAccuracy: true, 
-                maximumAge: 0, 
-                timeout: 8000 
-            };
+            var gpsConfigForte = { enableHighAccuracy: true, maximumAge: 0, timeout: 8000 };
 
             watchId = navigator.geolocation.watchPosition(
                 processarPosicaoGPS,
                 function(erro) {
                     console.error("Erro no watchPosition:", erro.message);
+                    toast('Sinal de GPS fraco', 'erro');
                 },
                 gpsConfigForte
             );
 
-            if (gpsPollingInterval) clearInterval(gpsPollingInterval);
-            gpsPollingInterval = setInterval(function() {
-                navigator.geolocation.getCurrentPosition(
-                    processarPosicaoGPS,
-                    function() {},
-                    { enableHighAccuracy: true, maximumAge: 0, timeout: 5000 }
-                );
-            }, 3000);
+            if (fallbackInterval) clearInterval(fallbackInterval);
+            fallbackInterval = setInterval(function() {
+                if (Date.now() - ultimoPontoTimestamp > 15000) {
+                    navigator.geolocation.getCurrentPosition(
+                        processarPosicaoGPS,
+                        function() {},
+                        { enableHighAccuracy: true, maximumAge: 0, timeout: 5000 }
+                    );
+                }
+            }, 15000);
+
+            toast('Gravação iniciada. Mantenha o app aberto.', 'sucesso');
+        }
+
+        function confirmarPararGravacao() {
+            document.getElementById('modal-confirmar').style.display = 'flex';
+        }
+
+        function fecharConfirmar() {
+            document.getElementById('modal-confirmar').style.display = 'none';
         }
 
         function pararGravacao() {
+            fecharConfirmar();
+
             if (watchId !== null) {
                 navigator.geolocation.clearWatch(watchId);
                 watchId = null;
             }
-            if (gpsPollingInterval !== null) {
-                clearInterval(gpsPollingInterval);
-                gpsPollingInterval = null;
+            if (fallbackInterval !== null) {
+                clearInterval(fallbackInterval);
+                fallbackInterval = null;
             }
             if (timerInterval) {
                 clearInterval(timerInterval);
                 timerInterval = null;
             }
 
-            // Libera os bloqueios e o áudio em segundo plano
             liberarWakeLock();
             pararAudioSilencioso();
 
-            var tempoFimViagem = new Date();
-            var diffMinutos = Math.round((tempoFimViagem - tempoInicioViagem) / 60000);
-            if (diffMinutos < 1) diffMinutos = 1;
+            document.getElementById('indicador-gravando').classList.remove('ativo');
+            localStorage.removeItem(CHAVE_PARCIAL);
+
+            if (pontosTrajeto.length === 0) {
+                toast('Nenhum ponto gravado. Nada a salvar.', 'erro');
+                document.getElementById('btn-iniciar').style.display = 'block';
+                document.getElementById('btn-parar').style.display = 'none';
+                return;
+            }
+
+            var tempoFim = new Date();
+            var diffMin = Math.round((tempoFim - tempoInicioViagem) / 60000);
+            if (diffMin < 1) diffMin = 1;
 
             var distanciaKmFinal = (distanciaTotalMeters / 1000).toFixed(2);
-            var dataAtual = new Date().toLocaleDateString('pt-BR') + ' ' + new Date().toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit'});
+            var velMediaFinal = contadorVelocidades > 0 ? Math.round(somaVelocidades / contadorVelocidades) : 0;
+            var velMaxFinal = Math.round(velocidadeMaxima);
 
-            var historico = JSON.parse(localStorage.getItem('percursos_moto') || '[]');
+            var dataAtual = new Date().toLocaleDateString('pt-BR') + ' ' +
+                            new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+
+            var historico = JSON.parse(localStorage.getItem(CHAVE_HISTORICO) || '[]');
             historico.unshift({
                 data: dataAtual,
                 distancia: distanciaKmFinal + " km",
-                tempo: diffMinutos + " min",
+                tempo: diffMin + " min",
                 ganho: ganhoElevacaoTotal + " m",
+                velMedia: velMediaFinal + " km/h",
+                velMax: velMaxFinal + " km/h",
                 pontos: pontosTrajeto
             });
-            localStorage.setItem('percursos_moto', JSON.stringify(historico));
+            localStorage.setItem(CHAVE_HISTORICO, JSON.stringify(historico));
 
+            // Preenche o resumo
             document.getElementById('modal-distancia').innerText = distanciaKmFinal + " km";
-            document.getElementById('modal-tempo').innerText = diffMinutos + " minuto(s)";
+            document.getElementById('modal-tempo').innerText = diffMin + " min";
             document.getElementById('modal-ganho').innerText = ganhoElevacaoTotal + " m";
+            document.getElementById('modal-vel-media').innerText = velMediaFinal + " km/h";
+            document.getElementById('modal-vel-max').innerText = velMaxFinal + " km/h";
             document.getElementById('modal-resumo').style.display = 'flex';
 
             document.getElementById('velocidade').innerText = "0 km/h";
             document.getElementById('btn-iniciar').style.display = 'block';
             document.getElementById('btn-parar').style.display = 'none';
+
+            toast('Percurso salvo no histórico!', 'sucesso');
         }
 
         function fecharModal() {
             document.getElementById('modal-resumo').style.display = 'none';
         }
 
+        // ========== HISTÓRICO ==========
         function abrirHistorico() {
-            alternarPainel();
-            var historico = JSON.parse(localStorage.getItem('percursos_moto') || '[]');
+            if (ehMobile()) document.getElementById('control-panel').classList.remove('aberto');
+
+            var historico = JSON.parse(localStorage.getItem(CHAVE_HISTORICO) || '[]');
             var container = document.getElementById('lista-historico');
             container.innerHTML = "";
 
             if (historico.length === 0) {
-                container.innerHTML = "<p style='color: #666; text-align:center;'>Nenhum percurso salvo ainda.</p>";
+                container.innerHTML = "<p style='color: var(--texto-suave); text-align:center;'>Nenhum percurso salvo ainda.</p>";
             } else {
                 historico.forEach(function(item, index) {
                     var div = document.createElement('div');
                     div.className = 'history-item';
-                    
+
                     var infoDiv = document.createElement('div');
                     infoDiv.className = 'history-info';
                     var altTexto = item.ganho ? ` | Ganho: <b>${item.ganho}</b>` : '';
-                    infoDiv.innerHTML = `<span>#${index+1} - ${item.data}</span><br>` +
-                                        `Dist: <b>${item.distancia}</b> | Tempo: <b>${item.tempo}</b>${altTexto}`;
-                    
-                    infoDiv.onclick = function() {
-                        carregarRotaNoMapa(item.pontos);
-                    };
+                    var velTexto = '';
+                    if (item.velMedia || item.velMax) {
+                        velTexto = `<div class="extra">`
+                                 + (item.velMedia ? `Média: <b>${item.velMedia}</b>` : '')
+                                 + (item.velMax ? ` | Máx: <b>${item.velMax}</b>` : '')
+                                 + `</div>`;
+                    }
+                    infoDiv.innerHTML = `<span>#${index+1} - ${item.data}</span><br>`
+                                      + `Dist: <b>${item.distancia}</b> | Tempo: <b>${item.tempo}</b>${altTexto}`
+                                      + velTexto;
+
+                    infoDiv.onclick = function() { carregarRotaNoMapa(item.pontos); };
 
                     var btnExcluir = document.createElement('button');
                     btnExcluir.className = 'btn-excluir-item';
-                    btnExcluir.innerText = 'Excluir';
+                    btnExcluir.innerText = '🗑️';
+                    btnExcluir.title = 'Excluir';
                     btnExcluir.onclick = function(e) {
                         e.stopPropagation();
                         deletarItemHistorico(index);
@@ -774,24 +1118,23 @@
 
         function carregarRotaNoMapa(pontos) {
             if (!pontos || pontos.length === 0) {
-                alert("Este percurso antigo nao possui coordenadas salvas.");
+                toast('Este percurso não tem coordenadas salvas', 'erro');
                 return;
             }
-
             fecharHistorico();
-
             if (polylineRota) map.removeLayer(polylineRota);
-
             polylineRota = L.polyline(pontos, { color: '#ff00ff', weight: 6 }).addTo(map);
             map.fitBounds(polylineRota.getBounds());
+            toast('Rota carregada no mapa', 'sucesso');
         }
 
         function deletarItemHistorico(index) {
-            if (confirm("Deseja apagar este percurso do historico?")) {
-                var historico = JSON.parse(localStorage.getItem('percursos_moto') || '[]');
+            if (confirm("Deseja apagar este percurso do histórico?")) {
+                var historico = JSON.parse(localStorage.getItem(CHAVE_HISTORICO) || '[]');
                 historico.splice(index, 1);
-                localStorage.setItem('percursos_moto', JSON.stringify(historico));
+                localStorage.setItem(CHAVE_HISTORICO, JSON.stringify(historico));
                 abrirHistorico();
+                toast('Percurso removido', 'sucesso');
             }
         }
 
